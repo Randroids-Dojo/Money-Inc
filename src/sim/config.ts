@@ -78,7 +78,7 @@ export const CFG = {
 
   // ---------------- banks ----------------
   rwMortgage: 0.5,
-  opexPerAsset: 0.006, // annual non-staff opex as share of assets
+  opexPerAsset: 0.0035, // annual non-staff opex as share of assets
   depositInsurancePremium: 0.0008, // annual, on deposits
   servicingFee: 0.0025,
   mbsDuration: 4,

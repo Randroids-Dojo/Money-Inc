@@ -48,11 +48,13 @@ const RX_BUSINESS = /\b(entrepreneurs?|grand opening|closes its doors|expan\w*|b
 const RX_ECONOMY = /\b(inflation|deflation|prices?|unemploy\w*|jobs?|jobless|recession|labour|labor|wages?|gdp|economy)\b/i;
 const RX_BANKS = /\b(banks?|banking|lend\w*|loans?|credit|deposits?|depositors?|runs?|liquidity|bail\w*|capital|mbs|securiti\w*|money supply|reserves?)\b/i;
 
+const isReview = (item: NewsItem): boolean => /^year \d+ in review\b/i.test(item.text);
+
 /** Which topic a headline belongs to (agent kind first, then keywords). */
 export function newsCategory(item: NewsItem, eco: Economy): NewsCategory {
   const t = item.text;
+  if (/^welcome\b/i.test(t) || isReview(item)) return 'economy';
   if (item.tone === 'policy' || RX_POLICY.test(t)) return 'policy';
-  if (/^welcome\b/i.test(t)) return 'economy';
   const kind = item.agent !== undefined ? eco.agents.get(item.agent)?.kind : undefined;
   if (kind === 'bank') return 'banks';
   if (RX_HOUSING.test(t)) return 'housing';
@@ -128,9 +130,11 @@ export function openNewsWindow(ctx: UIContext): void {
     const tag =
       it.tone === 'alert'
         ? badge('Alert', 'bad', { blink: live })
-        : it.tone === 'policy'
-          ? badge('Policy', 'info')
-          : null;
+        : isReview(it)
+          ? badge('Year in review', 'info')
+          : cat === 'policy'
+            ? badge('Policy', 'info')
+            : null;
     const content = [
       iconEl(CAT[cat].icon, { px: 12, className: 'mi-news-ico' }),
       h(

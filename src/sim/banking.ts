@@ -1477,7 +1477,7 @@ function raiseCapital(eco: Economy, b: Bank, amount: number): number {
   b.paidIn += amt;
   invalidateMetrics(b);
   b.log(eco.day, `Raised ${fmtMoney(amt)} of new capital from ${f.name}`, 'good');
-  eco.headline(`${b.name} raises ${fmtMoney(amt)} of fresh capital`, 'neutral', b.id, undefined, `cap-${b.id}`, 60);
+  if (amt >= 20_000) eco.headline(`${b.name} raises ${fmtMoney(amt)} of fresh capital`, 'neutral', b.id, undefined, `cap-${b.id}`, 60);
   eco.event('capital_raise', b.id, amt, f.id);
   return amt;
 }
@@ -1567,8 +1567,17 @@ export function bankMonthly(eco: Economy, b: Bank): void {
 
   if (liqShort) {
     const gap = (liqTarget - m.liquidityRatio) * m.deposits;
-    // pay up for deposits
-    b.depositRate = Math.min(policyRate(eco) + 0.01, b.depositRate + 0.0025);
+    // pay up for deposits, but never so much that lending stops paying for them
+    let yieldSum = 0,
+      bal = 0;
+    for (const l of b.loans) {
+      if (!l.active) continue;
+      yieldSum += l.rate * l.balance;
+      bal += l.balance;
+    }
+    const loanYield = bal > 0 ? yieldSum / bal : policyRate(eco) + 0.03;
+    const ceiling = Math.max(policyRate(eco) * pers.depositBeta, Math.min(policyRate(eco) + 0.01, loanYield - 0.028));
+    b.depositRate = Math.min(ceiling, b.depositRate + 0.0025);
     let got = 0;
     if (pers.wholesale > 0.2) got += borrowWholesale(eco, b, gap * pers.wholesale, 30);
     if (got < gap && pers.wholesale > 0.3) got += issueBonds(eco, b, (gap - got) * 0.5);
@@ -1580,7 +1589,9 @@ export function bankMonthly(eco: Economy, b: Bank): void {
     m = metrics(eco, b);
     liqShort = m.liquidityRatio < liqTarget;
   } else {
-    const base = Math.max(0, policyRate(eco) * pers.depositBeta);
+    // a bank with more deposits than it can lend out stops competing for them
+    const ldr = m.deposits > 0 ? m.loansGross / m.deposits : 1;
+    const base = Math.max(0, policyRate(eco) * pers.depositBeta * Math.max(0.35, Math.min(1.1, ldr / 0.85)));
     b.depositRate += (base - b.depositRate) * 0.3;
     // surplus cash first pays down expensive funding, then goes into government securities
     let surplus = b.reserves - (0.04 + pers.liquidityBuffer * 0.4) * b.deposits;
@@ -1677,8 +1688,8 @@ export function setStandards(eco: Economy, b: Bank): void {
   b.maxPD = clamp(0.01, 0.2, (0.03 + 0.09 * ra) * (1.3 - f));
   // banks price their favourite business more keenly
   const tilt = (w: number) => 1.2 - 0.45 * w;
-  b.spreads.mortgage = (0.016 + 0.004 * (1 - ra) + 0.025 * f) * tilt(pers.focus.mortgage);
-  b.spreads.business = (0.024 + 0.006 * (1 - ra) + 0.035 * f) * tilt(pers.focus.business);
+  b.spreads.mortgage = (0.019 + 0.004 * (1 - ra) + 0.025 * f) * tilt(pers.focus.mortgage);
+  b.spreads.business = (0.027 + 0.006 * (1 - ra) + 0.035 * f) * tilt(pers.focus.business);
   b.spreads.consumer = (0.05 + 0.01 * (1 - ra) + 0.05 * f) * tilt(pers.focus.consumer);
   b.spreads.development = (0.028 + 0.005 * (1 - ra) + 0.04 * f) * tilt(pers.focus.mortgage);
   void eco;

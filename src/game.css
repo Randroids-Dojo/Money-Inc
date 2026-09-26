@@ -373,7 +373,7 @@ canvas.world {
   height: 34px;
   display: grid;
   place-items: center;
-  font: 700 22px/1 var(--mi-font-title);
+  font: 700 16px/1 var(--mi-font-pixel);
   color: #fff;
   background: var(--mi-good-fill);
   border: 1px solid var(--mi-outline);

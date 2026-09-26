@@ -314,10 +314,10 @@ export class Renderer {
     this.drawHighlights(ctx);
     // money in motion and relationships
     if (this.game.showLinks) this.effects.drawLinks(ctx, cam.zoom);
-    if (this.game.showFlows) this.effects.drawCoins(ctx);
+    if (this.game.showFlows) this.effects.drawCoins(ctx, cam.zoom);
     this.effects.drawBursts(ctx);
     this.drawIcons(ctx);
-    this.effects.drawTexts(ctx);
+    this.effects.drawTexts(ctx, cam.zoom);
   }
 
   /**

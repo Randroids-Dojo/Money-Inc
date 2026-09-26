@@ -204,7 +204,18 @@ function titled(title: string, tip?: string): SectionTitle {
 
 /** A chart that is rebuilt only when a new month arrives (or the range / `deps` change). */
 function chart(env: Env, id: string, title: SectionTitle, build: () => Omit<LineChartOpts, 'labels'>, opts: { deps?: unknown[]; caption?: Child } = {}): HTMLElement {
-  const node = env.w.memo(`${env.tab}:${id}`, [...env.s.deps, ...(opts.deps ?? [])], () => lineChart({ labels: env.s.labels, height: 116, ...build() }));
+  const node = env.w.memo(`${env.tab}:${id}`, [...env.s.deps, ...(opts.deps ?? [])], () => {
+    const o = build();
+    // The axis rounding drops an exact-zero minimum a whole step below zero (and bars always
+    // include zero), so data that never goes negative is pinned to a zero floor.
+    if (o.yMin === undefined) {
+      let min = Infinity;
+      for (const s of o.series) for (const v of s.values) if (Number.isFinite(v) && v < min) min = v;
+      const bars = o.series.some((s) => s.type === 'bar');
+      if (min >= 0 && Number.isFinite(min) && (min === 0 || bars || o.zeroLine)) o.yMin = 0;
+    }
+    return lineChart({ labels: env.s.labels, height: 116, ...o });
+  });
   return section(title, node, opts.caption ? note(opts.caption) : null);
 }
 
@@ -343,8 +354,8 @@ function moneyLedger(eco: Economy): HTMLElement {
   const created = f.lending + f.bankSpending + f.publicOut;
   const destroyed = f.repayment + f.interest + f.publicIn + f.assetSales + f.writeDowns;
   const net = created - destroyed;
-  const plus = (v: number) => `+${fmtMoney(v)}`;
-  const minus = (v: number) => `−${fmtMoney(v)}`;
+  const plus = (v: number) => (v >= 0.5 ? `+${fmtMoney(v)}` : '$0');
+  const minus = (v: number) => (v >= 0.5 ? `−${fmtMoney(v)}` : '$0');
   return section(
     { title: 'This month so far', aside: h('span', { class: 'mi-stats-aside' }, `Day ${eco.dom + 1} of 30`) },
     kv([
@@ -420,16 +431,16 @@ const SPECS: Record<TabId, TabSpec> = {
         chart(
           env,
           'flow',
-          titled('Money created & destroyed', 'Green bars: new deposits created by lending each month. Red bars: deposits destroyed by repayments.'),
+          titled('Money created & destroyed', 'Above zero: new deposits created by lending each month. Below zero: deposits destroyed by repayments. The line is the difference.'),
           () => {
             const lend = s.get('lending');
             const repay = s.get('repayment');
             return {
-              height: 112,
+              height: 116,
               zeroLine: true,
               series: [
-                { label: 'Created by loans', color: C.money, values: lend, type: 'bar', format: money },
-                { label: 'Destroyed by repayments', color: C.destroyed, values: repay.map((v) => -v), type: 'bar', format: moneyAbs },
+                { label: 'Created by loans', color: C.money, values: lend, area: true, format: money },
+                { label: 'Destroyed by repayments', color: C.destroyed, values: repay.map((v) => -v), area: true, format: moneyAbs },
                 { label: 'Net', color: C.cream, values: lend.map((v, i) => v - repay[i]), format: signedMoney },
               ],
             };
@@ -672,13 +683,13 @@ const SPECS: Record<TabId, TabSpec> = {
             { label: 'Consumer confidence', color: C.money, values: s.get('confidence').map((v) => v * 100), format: count },
           ],
         })),
-        chart(env, 'trouble', titled('Defaults & failures', 'Loans defaulted and banks failed each month; the line counts banks still open.'), () => ({
-          height: 100,
+        chart(env, 'trouble', titled('Defaults & failures', 'Loans that defaulted each month (bars), banks still open (line) and bank failures (markers).'), () => ({
+          height: 104,
           series: [
             { label: 'Loan defaults', color: C.gold, values: s.get('defaults'), type: 'bar', format: count },
-            { label: 'Bank failures', color: C.destroyed, values: s.get('bankFailures'), type: 'bar', format: count },
             { label: 'Banks open', color: C.cream, values: s.get('banksAlive'), format: count },
           ],
+          markers: failMarkers(s),
         })),
         sparks(env, 'Balance sheets & markets', [
           { key: 'bankAssets', label: 'Bank assets', color: C.blue, fmt: money },

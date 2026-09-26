@@ -234,7 +234,7 @@ export function publicStaffTarget(eco: Economy): number {
 
 export function bankStaffTarget(eco: Economy, b: Bank): number {
   if (!b.alive) return 0;
-  return Math.max(1, Math.min(5, Math.round((b.deposits + b.loanBook()) / 5_000_000)));
+  return Math.max(1, Math.min(5, Math.round((b.deposits + b.loanBook()) / 9_000_000)));
 }
 
 export function labourMarketDay(eco: Economy): void {
@@ -291,7 +291,7 @@ export function hire(eco: Economy, employerId: number, h: Household): void {
     h.wage = emp.wage * h.skill;
   } else if (emp.kind === 'bank') {
     emp.employees.push(h.id);
-    h.wage = eco.market.wageIndex * 1.15 * h.skill;
+    h.wage = eco.market.wageIndex * 1.05 * h.skill;
   } else if (emp.kind === 'treasury') {
     emp.employees.push(h.id);
     h.wage = eco.market.wageIndex * h.skill;

@@ -204,13 +204,20 @@ export function openBankWindow(ctx: UIContext, id: number, anchor?: { x: number;
                 { label: 'Reserve Bank loans', value: m.cbLoan },
                 { label: 'Bonds issued', value: m.bondsIssued },
               ].filter((x) => x.value > 0.5),
-              equity: [
-                { label: 'Paid-in capital', value: b.paidIn },
-                { label: retained >= 0 ? 'Retained earnings' : 'Accumulated losses', value: retained },
-                { label: 'Market value changes', value: m.unrealized },
-              ].filter((x) => Math.abs(x.value) > 0.5),
+              // the widget draws negative equity items as a shortfall, so losses are netted here
+              equity:
+                retained >= 0 && m.unrealized >= 0
+                  ? [
+                      { label: 'Paid-in capital', value: b.paidIn },
+                      { label: 'Retained earnings', value: retained },
+                      { label: 'Market value gains', value: m.unrealized },
+                    ].filter((x) => x.value > 0.5)
+                  : [{ label: m.equity >= 0 ? 'Equity (after losses)' : 'Equity', value: m.equity, hint: 'Paid-in capital plus retained earnings, minus accumulated losses and market value falls.' }],
             }),
             kv([
+              ['Paid-in capital', money(b.paidIn), { sub: true }],
+              [retained >= 0 ? 'Retained earnings' : 'Accumulated losses', money(retained), { sub: true, tone: retained < 0 ? 'bad' : undefined }],
+              Math.abs(m.unrealized) > 1 ? ['Market value changes', money(m.unrealized), { sub: true, tone: m.unrealized < 0 ? 'bad' : undefined }] : null,
               ['Loan-loss provisions (deducted)', money(-m.provisions), { hint: 'Money set aside for loans it expects to go bad.' }],
               ['Risk-weighted assets', money(m.rwa), { hint: 'Assets weighted by riskiness: mortgages count half, business loans in full.' }],
               ['Capital ratio', percent(m.capitalRatio), { tone: m.capitalRatio < req ? 'bad' : m.capitalRatio < target ? 'warn' : 'good', strong: true }],

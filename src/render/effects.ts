@@ -330,7 +330,9 @@ export class Effects {
     }
   }
 
-  drawCoins(ctx: CanvasRenderingContext2D): void {
+  drawCoins(ctx: CanvasRenderingContext2D, zoom = 2): void {
+    // keep coins readable when zoomed out
+    const k = Math.max(1, Math.round(2 / zoom));
     for (const c of this.coins) {
       if (c.t < 0) continue;
       const e = c.t;
@@ -339,11 +341,13 @@ export class Effects {
       const fade = c.kind === 'destroy' ? 1 - Math.max(0, e - 0.7) / 0.3 : 1;
       ctx.globalAlpha = Math.max(0, Math.min(1, fade));
       const sp = coinCanvas(c.kind, c.size);
-      ctx.drawImage(sp, Math.round(x - sp.width / 2), Math.round(y - sp.height / 2));
+      const w = sp.width * k;
+      const hgt = sp.height * k;
+      ctx.drawImage(sp, Math.round(x - w / 2), Math.round(y - hgt / 2), w, hgt);
       if (c.kind === 'new' && Math.floor(e * 12) % 2 === 0) {
         // sparkle on freshly created money
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(Math.round(x + sp.width / 2), Math.round(y - sp.height / 2) - 1, 1, 1);
+        ctx.fillRect(Math.round(x + w / 2), Math.round(y - hgt / 2) - k, k, k);
       }
     }
     ctx.globalAlpha = 1;
@@ -381,12 +385,13 @@ export class Effects {
     ctx.globalAlpha = 1;
   }
 
-  drawTexts(ctx: CanvasRenderingContext2D): void {
+  drawTexts(ctx: CanvasRenderingContext2D, zoom = 2): void {
+    const zk = Math.max(1, Math.round(2 / zoom));
     for (const t of this.texts) {
       const k = t.t / 2.6;
-      const y = t.y - 10 - k * 26;
+      const y = t.y - 10 - k * 26 * zk;
       ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
-      const scale = t.big ? 2 : 1;
+      const scale = (t.big ? 2 : 1) * zk;
       const m = measurePixelText(t.text, scale);
       ctx.fillStyle = 'rgba(12,14,22,0.7)';
       ctx.fillRect(Math.round(t.x - m.w / 2) - 2, Math.round(y) - 2, m.w + 4, m.h + 4);
