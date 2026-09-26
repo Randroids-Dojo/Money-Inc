@@ -123,9 +123,12 @@ const newGame = () => {
     game.newGame(s, scenario);
     game.setSpeed(1);
     try {
-      const u = new URL(location.href);
-      u.searchParams.set('seed', String(s));
-      history.replaceState(null, '', u);
+      // remember the town in the address bar (not inside embedded frames)
+      if (window.self === window.top) {
+        const u = new URL(location.href);
+        u.searchParams.set('seed', String(s));
+        history.replaceState(null, '', u);
+      }
     } catch {
       // sandboxed frames may not allow changing the URL; the seed is shown in the intro anyway
     }

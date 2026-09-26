@@ -404,8 +404,9 @@ class ChartHost extends HTMLElement {
     const B = H - (o.labels?.length ? 14 : 7);
     const approxTicks = Math.max(2, Math.min(6, Math.floor((B - T) / 26)));
     let step = niceStep((hi - lo) / approxTicks);
-    if (o.yMin === undefined) lo = Math.floor(lo / step - 1e-9) * step;
-    if (o.yMax === undefined) hi = Math.ceil(hi / step + 1e-9) * step;
+    // snap to whole steps; a bound that already sits on a step (e.g. 0) stays put
+    if (o.yMin === undefined) lo = Math.floor(lo / step + 1e-9) * step;
+    if (o.yMax === undefined) hi = Math.ceil(hi / step - 1e-9) * step;
     if ((hi - lo) / step > 8) step = niceStep((hi - lo) / approxTicks);
     const ticks: number[] = [];
     for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-6; v += step) ticks.push(Math.abs(v) < step * 1e-9 ? 0 : v);

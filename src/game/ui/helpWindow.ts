@@ -41,7 +41,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'money', label: 'Money', icon: '💵' },
   { id: 'banks', label: 'Banks', icon: '🏦' },
   { id: 'cycles', label: 'Booms & busts', icon: '🎢' },
-  { id: 'colours', label: 'Colours & icons', icon: '🎨' },
+  { id: 'colours', label: 'Legend', icon: '🎨' },
 ];
 
 const isTab = (t: string | undefined): t is TabId => !!t && TABS.some((x) => x.id === t);
@@ -213,7 +213,7 @@ const PAGES: Record<TabId, (ctx: UIContext, w: WindowCtx) => Child[]> = {
         bullets([
           [b('Click anything'), ' — a house, a shop, a bank, a building site — to open its window: income, spending, savings and debts.'],
           [b('Follow a loan'), ': open a bank, pick one of its loans, and see where the money it created went.'],
-          ['Buildings show their mood with balloons, signs and floating captions (see ', b('Colours & icons'), ').'],
+          ['Buildings show their mood with balloons, signs and floating captions (see ', b('Legend'), ').'],
         ]),
       ),
       section(
@@ -451,13 +451,13 @@ const PAGES: Record<TabId, (ctx: UIContext, w: WindowCtx) => Child[]> = {
         'Balloons over buildings',
         w.memo('balloons', [], () =>
           spriteRows(
-            BALLOONS.map(([k, text]) => [safeSprite(() => iconSprite(k).canvas, 2), text]),
+            BALLOONS.map(([k, text]) => [safeSprite(() => iconSprite(k).canvas), text]),
           ),
         ),
       ),
       section(
         'Signs',
-        w.memo('signs', [], () => spriteRows(SIGNS.map(([k, text]) => [safeSprite(() => propSprite(k).canvas, 1), text]))),
+        w.memo('signs', [], () => spriteRows(SIGNS.map(([k, text]) => [safeSprite(() => propSprite(k).canvas), text]))),
       ),
       section(
         'Floating captions',
@@ -787,16 +787,16 @@ function coinCanvas(k: CoinKind): HTMLCanvasElement {
 
 /** A frozen frame of the "money created" sparkle / "money destroyed" puff. */
 function burstCanvas(kind: 'create' | 'destroy'): HTMLCanvasElement {
-  const { c, g } = pixelCanvas(34, 26, 1);
+  const { c, g } = pixelCanvas(28, 22, 2);
   if (!g) return c;
   g.fillStyle = '#10232a';
-  g.fillRect(0, 0, 34, 26);
-  const x = 17;
-  const y = 15;
+  g.fillRect(0, 0, 28, 22);
+  const x = 14;
+  const y = 12;
   const t = 0.32;
   const k = t / 0.9;
   if (kind === 'create') {
-    const r = (4 + 10 * k) * 1.4;
+    const r = (4 + 10 * k) * 1.2;
     g.fillStyle = '#b8ffc4';
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + t;
@@ -805,7 +805,7 @@ function burstCanvas(kind: 'create' | 'destroy'): HTMLCanvasElement {
     g.fillStyle = COIN_COLOURS.new;
     g.fillRect(x - 1, Math.round(y - r * 0.5), 3, 3);
   } else {
-    const r = (4 + 10 * k) * 2;
+    const r = (4 + 10 * k) * 1.6;
     g.fillStyle = '#8a8a96';
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
@@ -817,8 +817,11 @@ function burstCanvas(kind: 'create' | 'destroy'): HTMLCanvasElement {
   return c;
 }
 
-/** Copy a sprite canvas, cropped to its visible pixels and scaled up crisply. */
-function cropSprite(src: HTMLCanvasElement, scale: number): HTMLCanvasElement {
+/**
+ * Copy a sprite canvas, cropped to its visible pixels and scaled up crisply by the largest whole
+ * number (1–3) that fits a maxW x maxH box.
+ */
+function cropSprite(src: HTMLCanvasElement, maxW: number, maxH: number): HTMLCanvasElement {
   const sw = src.width;
   const sh = src.height;
   let x0 = 0;
@@ -852,14 +855,15 @@ function cropSprite(src: HTMLCanvasElement, scale: number): HTMLCanvasElement {
   }
   const w = Math.max(1, x1 - x0);
   const hh = Math.max(1, y1 - y0);
+  const scale = Math.max(1, Math.min(3, Math.floor(Math.min(maxW / w, maxH / hh))));
   const { c, g } = pixelCanvas(w, hh, scale);
   g?.drawImage(src, x0, y0, w, hh, 0, 0, w, hh);
   return c;
 }
 
-function safeSprite(get: () => HTMLCanvasElement, scale: number): Node {
+function safeSprite(get: () => HTMLCanvasElement): Node {
   try {
-    return cropSprite(get(), scale);
+    return cropSprite(get(), 52, 40);
   } catch {
     return h('span', { class: 'mi-help-missing' }, '?');
   }

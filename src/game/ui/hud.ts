@@ -6,6 +6,7 @@ import { fmtMoney, pct } from '../../sim/format';
 import { COIN_COLOURS, COIN_LABELS, type CoinKind } from '../../render/effects';
 import type { Lens, Speed } from '../game';
 import { grade } from '../mandate';
+import { unreadNewsCount } from './newsWindow';
 import type { UIContext } from './context';
 
 export interface HudActions {
@@ -41,10 +42,15 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
   news.classList.add('gm-ticker');
   news.addEventListener('click', () => act.openNews());
   const statsGroup = h('div', { class: 'gm-hud-stats' });
+  const newsBtn = iconButton('📰', 'News (N)', () => act.openNews(), { small: true });
+  newsBtn.classList.add('gm-has-badge');
+  const newsBadge = h('span', { class: 'gm-count' });
+  newsBadge.hidden = true;
+  newsBtn.append(newsBadge);
   const tools = stripGroup(
     iconButton('🏛️', 'Reserve Bank — your controls (B)', () => act.openReserveBank(), { small: true }),
     iconButton('📊', 'Statistics (G)', () => act.openStats(), { small: true }),
-    iconButton('📰', 'News (N)', () => act.openNews(), { small: true }),
+    newsBtn,
     iconButton('❓', 'How it works (H)', () => act.openHelp(), { small: true }),
     iconButton('🎲', 'New city', () => act.newGame(), { small: true }),
   );
@@ -61,9 +67,12 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
   legend.classList.add('mi-ui');
   document.body.appendChild(legend);
 
-  // ---- alerts (top-centre)
+  // ---- alerts (top-right) and the pause banner
   const alerts = h('div', { class: 'gm-alerts' });
   document.body.appendChild(alerts);
+  const paused = h('button', { class: 'gm-paused mi-ui', title: 'Resume (Space)', onclick: () => game.togglePause() }, 'PAUSED');
+  paused.hidden = true;
+  document.body.appendChild(paused);
 
   let lastNewsId = 0;
   let lastLens: Lens | null = null;
@@ -215,9 +224,14 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
       renderSpeed();
       lastSpeed = game.speed;
     }
+    paused.hidden = game.speed !== 0 || !!document.querySelector('.mi-intro-root, .mi-intro');
     if (game.lens !== lastLens || game.showFlows !== lastFlows) renderLens();
     renderStats();
     pushNews();
+    const unread = unreadNewsCount(game);
+    newsBadge.hidden = unread === 0;
+    const label = unread > 99 ? '99+' : String(unread);
+    if (newsBadge.textContent !== label) newsBadge.textContent = label;
     syncInsets();
   };
 

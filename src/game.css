@@ -386,3 +386,49 @@ canvas.world {
 .gm-grade.is-F {
   background: var(--mi-bad-fill);
 }
+
+.gm-paused {
+  position: fixed;
+  left: 50%;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 35;
+  padding: 5px 14px 4px;
+  font: 16px/1 var(--mi-font-pixel);
+  letter-spacing: 2px;
+  color: var(--mi-lcd-ink);
+  background: var(--mi-screen);
+  border: 1px solid var(--mi-outline);
+  box-shadow: var(--mi-drop);
+  cursor: pointer;
+  animation: gm-blink 1.2s steps(2) infinite;
+}
+@media (max-width: 719px) {
+  .gm-paused {
+    top: calc(48px + env(safe-area-inset-top, 0px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gm-paused,
+  .gm-alert-icon {
+    animation: none;
+  }
+}
+
+.gm-has-badge {
+  position: relative;
+}
+.gm-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font: 8px/14px var(--mi-font-pixel);
+  text-align: center;
+  color: #fff;
+  background: var(--mi-bad-fill);
+  border: 1px solid var(--mi-outline);
+  pointer-events: none;
+}
