@@ -28,6 +28,7 @@ export class News {
   /** Report macro turning points with hysteresis so the ticker is not spammy. */
   macro(eco: Economy): void {
     const st = eco.stats;
+    if (st.length) this.yearReview(eco);
     if (st.length < 13) return;
     const day = eco.day;
     const infl = st.last('inflation');
@@ -79,8 +80,41 @@ export class News {
 
     const fails = st.last('bankFailures');
     if (fails > 0 && eco.aliveBanks().length <= 1) this.add(day, `Only one bank is left standing in ${eco.city.name}`, 'alert');
+
     void growth;
     void fmtMoney;
+  }
+
+  /** "Year N in review" headline every December. */
+  private yearReview(eco: Economy): void {
+    const st = eco.stats;
+    const day = eco.day;
+    const cb = eco.cb.id;
+    const infl = st.last('inflation');
+    const cg = st.last('creditGrowth');
+    if (eco.month % 12 === 11) {
+      const y = Math.floor(eco.month / 12) + 1;
+      const sum = (k: Parameters<typeof st.last>[0]) => {
+        let s = 0;
+        for (let i = 0; i < 12; i++) s += st.last(k, i) || 0;
+        return s;
+      };
+      const gdpNow = sum('realGdp');
+      let gdpPrev = 0;
+      for (let i = 12; i < 24; i++) gdpPrev += st.last('realGdp', i) || 0;
+      const g = gdpPrev > 0 && st.length >= 24 ? gdpNow / gdpPrev - 1 : NaN;
+      const opened = sum('openings');
+      const closed = sum('closures');
+      const failed = sum('bankFailures');
+      const parts = [
+        Number.isFinite(g) ? `the economy ${g >= 0 ? 'grew' : 'shrank'} ${pct(Math.abs(g))}` : null,
+        Number.isFinite(infl) ? `prices ${infl >= 0 ? 'rose' : 'fell'} ${pct(Math.abs(infl))}` : null,
+        Number.isFinite(cg) && st.length >= 13 ? `credit ${cg >= 0 ? 'grew' : 'shrank'} ${pct(Math.abs(cg))}` : null,
+        `${opened} business${opened === 1 ? '' : 'es'} opened and ${closed} closed`,
+        failed > 0 ? `${failed} bank${failed > 1 ? 's' : ''} failed` : null,
+      ].filter(Boolean);
+      this.add(day, `Year ${y} in review: ${parts.join(', ')}.`, 'policy', cb);
+    }
   }
 
   private band(

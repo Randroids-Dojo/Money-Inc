@@ -21,6 +21,9 @@ town's life is how you see that simulation.
 
 You play as the **Reserve Bank**. You set the policy rate, the capital and liquidity rules,
 deposit insurance, emergency lending and asset purchases (QE). Then you watch the city react.
+Public **approval** (a letter grade in the status bar) tracks your mandate: about 2%
+inflation, plenty of jobs and no bank failures. An advisor explains each new phenomenon the
+first time it happens: new money, securitisation, a default, a run.
 
 ## Playing
 

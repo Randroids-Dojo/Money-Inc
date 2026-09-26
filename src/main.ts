@@ -1,6 +1,6 @@
 // Money Inc. — boot the city, the renderer and the game UI, and run the main loop.
 
-import { closeTopWindow, mountUI, updateWindows, installTooltips } from './ui';
+import { closeAllWindows, closeTopWindow, mountUI, updateWindows, installTooltips } from './ui';
 import './game.css';
 import { Game, type Selection, type Speed } from './game/game';
 import { Renderer } from './render/renderer';
@@ -119,11 +119,16 @@ renderer.onPick = (sel, screen) => {
 
 const newGame = () => {
   extraUi.intro(ctx, (s, scenario) => {
+    closeAllWindows();
     game.newGame(s, scenario);
     game.setSpeed(1);
-    const u = new URL(location.href);
-    u.searchParams.set('seed', String(s));
-    history.replaceState(null, '', u);
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('seed', String(s));
+      history.replaceState(null, '', u);
+    } catch {
+      // sandboxed frames may not allow changing the URL; the seed is shown in the intro anyway
+    }
   });
 };
 

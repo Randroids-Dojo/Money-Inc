@@ -162,6 +162,7 @@ export function buyFrom(eco: Economy, h: Household, sector: 'retail' | 'service'
     if (sector === 'retail') can = Math.min(can, Math.max(0, f.inventory));
     if (can > 0.01) {
       const moved = eco.ledger.transfer(h.acct, f.acct, can * f.price, 'spend', loan);
+      if (loan !== undefined && moved > 0) eco.loans.get(loan)?.spend(f.id, moved, sector === 'retail' ? 'shopping' : 'services');
       const u = moved / f.price;
       f.capToday -= u;
       if (sector === 'retail') f.inventory -= u;
@@ -205,6 +206,7 @@ export function buyGoods(
     const can = Math.min(want, Math.max(0, f.inventory), afford);
     if (can <= 0.01) return;
     const moved = eco.ledger.transfer(buyer.acct, f.acct, can * f.price, kind, loan);
+    if (loan !== undefined && moved > 0) eco.loans.get(loan)?.spend(f.id, moved, kind === 'invest' ? 'equipment' : 'supplies');
     const u = moved / f.price;
     f.inventory -= u;
     f.m.units += u;
@@ -237,7 +239,7 @@ export function bankStaffTarget(eco: Economy, b: Bank): number {
 
 export function labourMarketDay(eco: Economy): void {
   const unemployed: Household[] = [];
-  for (const h of eco.households) if (!h.departed && !h.employed && !h.retired && h.homeUnit >= 0) unemployed.push(h);
+  for (const h of eco.households) if (!h.departed && !h.employed && !h.retired && h.homeUnit >= 0 && eco.day >= h.searchUntil) unemployed.push(h);
   eco.rng.shuffle(unemployed);
   const employers: { id: number; vac: number }[] = [];
   for (const f of eco.firms) if ((f.status === 'open' || f.status === 'planned') && f.vacancies > 0) employers.push({ id: f.id, vac: f.vacancies });
@@ -313,6 +315,8 @@ export function fire(eco: Economy, h: Household, reason: string, quit = false): 
   const prev = h.employer;
   h.employer = -1;
   h.wage = 0;
+  // finding the next job takes a few weeks
+  h.searchUntil = eco.day + eco.rng.int(8, 28);
   h.note(eco.day, quit ? `Quit: ${reason}` : `Laid off: ${reason}`, quit ? 'neutral' : 'bad', undefined, prev);
   if (!quit) {
     eco.event('layoff', prev, undefined, h.id);

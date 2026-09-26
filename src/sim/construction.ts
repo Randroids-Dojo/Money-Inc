@@ -6,7 +6,7 @@ import type { Economy } from './economy';
 import { Project, Unit, type Firm, type ProjectKind } from './agents';
 import { buyGoods } from './markets';
 import { openFirm, monthlyCosts } from './firms';
-import { originate, shopForLoan, type LoanApp } from './banking';
+import { originate, requestWorkingCapital, shopForLoan, type LoanApp } from './banking';
 import { listUnit } from './housing';
 import { fmtMoney, pct } from './format';
 
@@ -117,7 +117,16 @@ function workOn(eco: Economy, b: Firm, p: Project, alloc: number): void {
   } else {
     const pay = work * unitPrice;
     const eqCost = eqUnits * eco.market.factoryPrice;
+    if (client.acct.balance < pay + eqCost && client.kind === 'firm' && p.status === 'active') {
+      // cost overruns: ask the bank for a little more to finish the job
+      requestWorkingCapital(eco, client, (pay + eqCost) * 20 - client.acct.balance);
+    }
     if (client.acct.balance < pay + eqCost) {
+      if (p.progress >= 0.97) {
+        // all but finished: the builder hands over the keys and writes off the rest
+        completeProject(eco, p);
+        return;
+      }
       stall(eco, p, `${client.name} could not pay the builder`);
       return;
     }
@@ -140,7 +149,6 @@ function workOn(eco: Economy, b: Firm, p: Project, alloc: number): void {
       p.paid += spent;
       eco.monthCounters.investment += spent;
       if (client.kind === 'firm') client.m.investment += spent;
-      if (loan && spent > 0) loan.spend(-1, spent, 'equipment from local factories');
     }
   }
   b.m.units += work;

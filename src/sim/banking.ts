@@ -1146,13 +1146,21 @@ export function borrowFromCB(eco: Economy, b: Bank, amount: number): number {
   const mode = eco.policy.emergencyLiquidity;
   if (mode === 'none') return 0;
   const bp = bondPrice(b.bondCoupon, eco.market.bondYield);
-  let collateral = b.bills * 0.99 + b.bondPar * bp * 0.95;
-  if (mode === 'broad') {
+  const securities = b.bills * 0.99 + b.bondPar * bp * 0.95;
+  let collateral = securities;
+  // Bagehot: lend to solvent banks against good collateral (with haircuts). The generous
+  // regime takes almost anything and does not ask about solvency.
+  const solvent = cachedMetrics(eco, b).equity > 0;
+  if (mode === 'broad' || solvent) {
+    const k = mode === 'broad' ? 1 : 0.8;
     for (const [pid, h] of b.mbs) {
       const p = eco.pools.get(pid);
-      if (p) collateral += h.frac * p.balance * p.price * 0.8;
+      if (p) collateral += h.frac * p.balance * p.price * 0.8 * k;
     }
-    for (const l of b.loans) if (l.status === 'performing') collateral += l.balance * 0.6;
+    for (const l of b.loans) {
+      if (l.status === 'performing') collateral += l.balance * (l.kind === 'mortgage' ? 0.7 : 0.5) * k;
+      else if (mode === 'broad' && l.status === 'late') collateral += l.balance * 0.3;
+    }
   }
   const room = Math.max(0, collateral - b.cbLoan);
   const amt = Math.min(room, amount);
@@ -1161,7 +1169,7 @@ export function borrowFromCB(eco: Economy, b: Bank, amount: number): number {
   b.cbLoan += amt;
   b.reserves += amt; // new central bank reserves
   eco.cb.loansToBanks.set(b.id, b.cbLoan);
-  const emergency = mode === 'broad' && amt > b.bills * 0.99 + b.bondPar * bp * 0.95;
+  const emergency = b.cbLoan > securities;
   b.cbLoanEmergency = b.cbLoanEmergency || emergency;
   eco.recordFlow(eco.cb.id, b.id, amt, 'cb');
   if (amt > 0.03 * b.deposits) {

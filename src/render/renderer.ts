@@ -5,8 +5,8 @@ import { Camera } from './camera';
 import { buildGround, buildLotVisuals, signSprite, type Ground, type LotVisual } from './cityView';
 import { Traffic, type Mover } from './traffic';
 import { Effects, type Link } from './effects';
-import { groundTile, iconSprite, personSprite, propSprite, shoreTile, drawPixelText, type Sprite } from './sprites';
-import { HALF_H, HALF_W, ROAD_E, ROAD_N, ROAD_S, ROAD_W, screenToTile, tileToScreen, type Dir } from './iso';
+import { groundTile, iconSprite, personSprite, propSprite, shoreTile, type Sprite } from './sprites';
+import { HALF_H, HALF_W, ROAD_E, screenToTile, tileToScreen, type Dir } from './iso';
 import type { Game, Lens, Selection } from '../game/game';
 import { FIRST_BANK_ORIGIN, ORIGIN_LEGACY, ORIGIN_PUBLIC, MAX_ORIGINS } from '../sim/ledger';
 import { unitValue } from '../sim/banking';
@@ -259,7 +259,7 @@ export class Renderer {
       for (const s of l.signs) {
         const sp = signSprite(s.kind);
         const p = tileToScreen(s.tx, s.ty);
-        items.push({ sort: l.sort + 0.01, sort2: l.sort2, draw: (c) => c.drawImage(sp.canvas, Math.round(p.x - sp.ax), Math.round(p.y - sp.ay)) });
+        items.push({ sort: s.behind ? l.sort - 0.01 : l.sort + 0.01, sort2: l.sort2, draw: (c) => c.drawImage(sp.canvas, Math.round(p.x - sp.ax), Math.round(p.y - sp.ay)) });
       }
     }
     for (const d of this.game.eco.city.decorations) {
@@ -899,4 +899,3 @@ function shadeHex(hex: string, k: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-export { drawPixelText, ROAD_N, ROAD_S, ROAD_W };

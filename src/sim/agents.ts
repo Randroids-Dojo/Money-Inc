@@ -55,6 +55,8 @@ export class Household {
   wealthMonths = 6;
   /** retired: out of the labour force, living on a public pension and savings */
   retired = false;
+  /** day before which a newly jobless person is still searching (cannot start a new job yet) */
+  searchUntil = 0;
 
   constructor(
     public readonly id: number,

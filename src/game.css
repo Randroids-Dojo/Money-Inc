@@ -29,6 +29,7 @@ canvas.world {
   left: 0;
   right: 0;
   bottom: 0;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
   z-index: 40;
   border-left: none !important;
   border-right: none !important;
@@ -74,7 +75,7 @@ canvas.world {
 /* ---------------------------------------------------------------- map panel */
 .gm-mapbar {
   position: fixed;
-  top: 8px;
+  top: calc(8px + env(safe-area-inset-top, 0px));
   left: 8px;
   z-index: 30;
   display: flex;
@@ -156,7 +157,7 @@ canvas.world {
 /* ---------------------------------------------------------------- alerts */
 .gm-alerts {
   position: fixed;
-  top: 8px;
+  top: calc(8px + env(safe-area-inset-top, 0px));
   right: 8px;
   z-index: 70;
   display: flex;
@@ -355,4 +356,33 @@ canvas.world {
 }
 .gm-pl-total td {
   border-top: 1px solid var(--mi-rule-2);
+}
+
+.gm-mandate {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--mi-paper-2);
+  border: 1px solid var(--mi-rule-2);
+}
+.gm-grade {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  font: 700 22px/1 var(--mi-font-title);
+  color: #fff;
+  background: var(--mi-good-fill);
+  border: 1px solid var(--mi-outline);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
+}
+.gm-grade.is-C {
+  background: var(--mi-warn-fill);
+}
+.gm-grade.is-D,
+.gm-grade.is-F {
+  background: var(--mi-bad-fill);
 }

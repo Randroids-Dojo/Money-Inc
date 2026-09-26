@@ -126,6 +126,8 @@ export interface Sign {
   /** tile-space ground point */
   tx: number;
   ty: number;
+  /** drawn behind the building (e.g. a crane over an expansion) */
+  behind?: boolean;
 }
 
 export interface LotVisual {
@@ -283,6 +285,22 @@ export function buildLotVisuals(eco: Economy): LotVisual[] {
             break;
           }
           spec = firmSpec(eco, f, lot);
+          const proj = f.project >= 0 ? eco.projects.get(f.project) : undefined;
+          if (f.status === 'planned' && proj && proj.status !== 'complete') {
+            // a new business: its premises are still a building site
+            const progress = proj.work > 0 ? 1 - proj.remaining / proj.work : 0;
+            spec = {
+              ...base,
+              kind: 'construction',
+              level: 1,
+              progress: Math.max(0.05, Math.min(1, progress)),
+              target: { kind: spec.kind, level: spec.level, subtype: f.subtype },
+              state: proj.status === 'stalled' ? 'stalled' : 'normal',
+            };
+          } else if (f.status === 'open' && proj && proj.status === 'active') {
+            // expanding: a crane rises behind the building
+            signs.push({ kind: 'crane', tx: lot.x + 0.35, ty: lot.y + 0.35, behind: true });
+          }
           select = { kind: 'firm', id: f.id };
           label = f.status === 'closed' ? `${f.name} (closed)` : f.name;
           color = f.color;

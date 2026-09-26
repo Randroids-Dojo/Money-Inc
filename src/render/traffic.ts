@@ -369,4 +369,3 @@ export class Traffic {
   }
 }
 
-export const ROAD_DIRS = { ROAD_N, ROAD_E, ROAD_S, ROAD_W };

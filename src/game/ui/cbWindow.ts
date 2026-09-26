@@ -7,6 +7,7 @@ import { bondPrice } from '../../sim/markets';
 import type { DepositInsurance, EmergencyLiquidity, QeTarget } from '../../sim/types';
 import type { Bank } from '../../sim/bank';
 import { money, percent } from './common';
+import { grade } from '../mandate';
 import type { UIContext } from './context';
 
 const pending = new Map<string, number>();
@@ -46,7 +47,22 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
       const st = eco.stats;
       const last = (k: Parameters<typeof st.last>[0]) => (st.length ? st.last(k) : NaN);
       if (wctx.tab === 'controls') {
+        const md = ctx.game.mandate;
         body.append(
+          h(
+            'div',
+            { class: 'gm-mandate' },
+            h('span', { class: ['gm-grade', `is-${grade(md.approval)}`] }, grade(md.approval)),
+            h(
+              'div',
+              h('strong', `Public approval ${Math.round(md.approval)}%`),
+              h(
+                'div',
+                { class: 'mi-muted' },
+                md.reasons.length ? md.reasons.slice(0, 3).map((r) => `${r.label} (${r.delta > 0 ? '+' : ''}${Math.round(r.delta)})`).join(' · ') : 'Your mandate: 2% inflation, plenty of jobs, no bank failures.',
+              ),
+            ),
+          ),
           h(
             'div',
             { class: 'mi-grid3 gm-tiles' },

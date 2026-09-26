@@ -610,6 +610,21 @@ export function createEconomy(opts: GameOptions): Economy {
       h.movingUp = rng.chance(0.6);
     }
   }
+  // a first line in every family's diary
+  for (const h of eco.households) {
+    if (h.departed) continue;
+    const home = eco.units[h.homeUnit];
+    const parts: string[] = [];
+    if (h.retired) parts.push('Retired');
+    else if (h.employed) parts.push(`Works at ${eco.nameOf(h.employer)}`);
+    else parts.push('Looking for work');
+    if (home && home.ownerId === h.id) {
+      const m = home.mortgage && home.mortgage.active ? home.mortgage : null;
+      parts.push(m ? `owns their home with a mortgage from ${eco.nameOf(m.originatorId)}` : 'owns their home outright');
+    } else if (home) parts.push(`rents from ${eco.nameOf(home.ownerId)}`);
+    if (h.ownedUnits.length > (home && home.ownerId === h.id ? 1 : 0)) parts.push('and lets out property');
+    h.note(0, `${parts.join(', ')}.`, 'neutral', undefined, h.employed ? h.employer : undefined);
+  }
   // origin: everything that exists at the start is "legacy" money
   for (const a of [...eco.households.map((h) => h.acct), ...eco.firms.map((f) => f.acct), world.acct, fund.acct]) {
     a.origin.fill(0);

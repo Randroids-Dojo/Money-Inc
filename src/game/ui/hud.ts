@@ -5,6 +5,7 @@ import { button, glyph, h, iconButton, lcd, stat, strip, stripGroup, ticker, set
 import { fmtMoney, pct } from '../../sim/format';
 import { COIN_COLOURS, COIN_LABELS, type CoinKind } from '../../render/effects';
 import type { Lens, Speed } from '../game';
+import { grade } from '../mandate';
 import type { UIContext } from './context';
 
 export interface HudActions {
@@ -124,18 +125,23 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
     const L = (k: Parameters<typeof st.last>[0]) => (has ? st.last(k) : NaN);
     const infl = L('inflation');
     const u = has ? L('unemployment') : eco.unemploymentRate();
-    const mg = L('moneyGrowth');
-    const cg = L('creditGrowth');
-    const hg = L('hpiGrowth');
+    const yearOld = st.length > 12;
+    const mg = yearOld ? L('moneyGrowth') : NaN;
+    const cg = yearOld ? L('creditGrowth') : NaN;
+    const hg = yearOld ? L('hpiGrowth') : NaN;
     statsGroup.replaceChildren(
       stat('Money', fmtMoney(eco.broadMoney()), Number.isFinite(mg) ? { value: mg, text: pct(Math.abs(mg), 1), good: 'none' } : null, {
         tip: 'Broad money: all bank deposits. It grows when banks lend and shrinks when loans are repaid.',
       }),
       stat('Credit', fmtMoney(eco.totalCredit()), Number.isFinite(cg) ? { value: cg, text: pct(Math.abs(cg), 1), good: 'none' } : null, { tip: 'All loans outstanding (12-month change).' }),
-      stat('Inflation', Number.isFinite(infl) ? pct(infl) : '—', null, { tone: tone(infl, 0.06, 0.035) ?? (infl < 0 ? 'warn' : undefined), tip: 'Consumer prices vs a year ago.' }),
+      stat('Inflation', Number.isFinite(infl) && yearOld ? pct(infl) : '—', null, { tone: tone(infl, 0.06, 0.035) ?? (infl < 0 ? 'warn' : undefined), tip: 'Consumer prices vs a year ago.' }),
       stat('Jobless', pct(u), null, { tone: tone(u, 0.1, 0.07), tip: 'Unemployment rate.' }),
       stat('Homes', Number.isFinite(hg) ? `${hg >= 0 ? '+' : ''}${pct(hg)}` : '—', null, { tone: tone(Math.abs(hg), 0.15, 0.08), tip: 'House prices vs a year ago.' }),
       stat('Rate', pct(eco.policy.policyRate, 2), null, { tip: eco.policy.autopilot ? 'Policy rate (on autopilot)' : 'Policy rate — you set it at the Reserve Bank.' }),
+      stat('Approval', `${Math.round(game.mandate.approval)}% ${grade(game.mandate.approval)}`, null, {
+        tone: game.mandate.approval < 45 ? 'bad' : game.mandate.approval < 58 ? 'warn' : undefined,
+        tip: 'How the public rates you, the Reserve Bank: stable prices (2% inflation), jobs, and no bank failures.',
+      }),
     );
   };
 

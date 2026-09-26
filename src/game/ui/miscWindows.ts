@@ -42,8 +42,8 @@ export function openProjectWindow(ctx: UIContext, id: number, anchor?: { x: numb
           kv([
             ['Built by', builder ? agentLink(ctx, builder.id) : '—'],
             client && client.id !== p.builderId ? ['For', agentLink(ctx, client.id)] : null,
-            ['Total cost', money(p.cost)],
-            ['Paid so far', money(p.paid)],
+            ['Budget', money(p.cost)],
+            ['Paid so far', money(p.paid), { tone: p.paid > p.cost * 1.02 ? 'warn' : undefined, hint: p.paid > p.cost ? 'Construction costs rose while it was being built.' : undefined }],
             loan ? ['Financed by', h('span', agentLink(ctx, loan.originatorId), ' — ', loanLink(ctx, loan, `${money(loan.principal0)} loan`))] : ['Financed by', 'the owner’s own money'],
             ['Started', fmtDate(p.started)],
             p.status === 'stalled' ? ['Why it stopped', p.stallReason || 'money ran out', { tone: 'bad' }] : null,

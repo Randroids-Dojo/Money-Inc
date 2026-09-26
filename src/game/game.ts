@@ -4,6 +4,7 @@
 import { createEconomy, type Scenario } from '../sim/setup';
 import type { Economy } from '../sim/economy';
 import type { FlowEvent, SimEvent } from '../sim/types';
+import { newMandate, updateMandate, type MandateState } from './mandate';
 
 export type Speed = 0 | 1 | 2 | 5 | 10;
 
@@ -43,6 +44,8 @@ export class Game {
   lens: Lens = 'none';
   showFlows = true;
   showLinks = true;
+  /** how the public rates the Reserve Bank (the player) */
+  mandate: MandateState = newMandate();
   /** fraction of the current day elapsed (for smooth animation) */
   dayFrac = 0;
   private acc = 0;
@@ -70,6 +73,7 @@ export class Game {
     this.scenario = scenario;
     this.eco = this.build();
     this.selection = null;
+    this.mandate = newMandate();
     this.flows = [];
     this.events = [];
     this.acc = 0;
@@ -124,6 +128,9 @@ export class Game {
     if (this.flows.length > 30000) this.flows.splice(0, this.flows.length - 30000);
     if (this.events.length > 3000) this.events.splice(0, this.events.length - 3000);
     for (const f of this.on.day) f();
-    if (eco.month !== month) for (const f of this.on.month) f();
+    if (eco.month !== month) {
+      updateMandate(this.mandate, eco);
+      for (const f of this.on.month) f();
+    }
   }
 }

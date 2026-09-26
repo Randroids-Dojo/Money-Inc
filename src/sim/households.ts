@@ -140,6 +140,13 @@ function reviewHousehold(eco: Economy, h: Household): void {
   h.unmetThisMonth = 0;
   if (h.employed) h.employedDays += DAYS_PER_MONTH;
   else h.unemployedDays += DAYS_PER_MONTH;
+  // job churn: a few people leave their jobs each month to look for something better,
+  // more of them when jobs are easy to find
+  if (h.employed && h.firms.length === 0) {
+    const emp = eco.agents.get(h.employer);
+    const tight = Math.max(0, 0.06 - eco.market.unemployment);
+    if (emp && emp.kind === 'firm' && eco.rng.chance(0.006 + 0.15 * tight)) fire(eco, h, 'left to look for a better-paid job', true);
+  }
 
   // ---- consumption plan
   h.budget = planBudget(eco, h);
