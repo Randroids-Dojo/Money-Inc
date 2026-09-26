@@ -24,6 +24,7 @@ export function signedPct(x: number, digits = 1): string {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function fmtDate(day: number, withDay = true): string {
+  if (day < 0) return 'before Y1';
   const y = Math.floor(day / DAYS_PER_YEAR) + 1;
   const m = Math.floor((day % DAYS_PER_YEAR) / DAYS_PER_MONTH);
   const d = (day % DAYS_PER_MONTH) + 1;
