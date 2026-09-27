@@ -818,6 +818,8 @@ export function stripSep(): HTMLElement {
 export interface TickerEl extends HTMLElement {
   /** Queue a message (most recent first). Keeps the last `max` messages. */
   push(msg: string, tone?: Tone): void;
+  /** Drop every message. */
+  clear(): void;
 }
 
 export function ticker(messages: readonly string[] = [], opts: { max?: number; speed?: number } = {}): TickerEl {
@@ -851,6 +853,10 @@ export function ticker(messages: readonly string[] = [], opts: { max?: number; s
   el.push = (msg: string, tone?: Tone) => {
     items.unshift({ msg, tone });
     items.length = Math.min(items.length, max);
+    build();
+  };
+  el.clear = () => {
+    items.length = 0;
     build();
   };
   build();

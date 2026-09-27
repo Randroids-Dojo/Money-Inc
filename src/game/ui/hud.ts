@@ -225,7 +225,9 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
   };
   window.addEventListener('resize', syncInsets);
   game.on.newGame.push(() => {
+    // headlines belong to the town they happened in, not the one behind the title screen
     lastNewsId = 0;
+    news.clear();
     alerts.replaceChildren();
   });
 
