@@ -15,7 +15,8 @@ export interface Ledger {
 
 export function createLedger(ctx: UIContext, onSize: (h: number) => void): Ledger {
   const game = ctx.game;
-  let collapsed = false;
+  // (folded away on a phone: the map needs the room)
+  let collapsed = typeof window !== 'undefined' && window.innerWidth < 720;
   let details = false;
   let lastMoney = 0;
   const lcd = h('div', { class: 'gn-ledger-lcd' });
@@ -40,7 +41,7 @@ export function createLedger(ctx: UIContext, onSize: (h: number) => void): Ledge
     },
     'MONEY IN TOWN',
   );
-  const el = h('div', { class: 'gn-ledger mi-ui' }, head, lcd, spark, rows, toggle, more);
+  const el = h('div', { class: ['gn-ledger mi-ui', collapsed && 'is-collapsed'] }, head, lcd, spark, rows, toggle, more);
   document.body.append(el);
 
   const line = (label: string, value: string, cls: string, tip: string) => h('div', { class: ['gn-ledger-row', cls], tip }, h('span', label), h('b', value));

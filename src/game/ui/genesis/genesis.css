@@ -462,10 +462,12 @@
 }
 @media (max-width: 719px) {
   .gn-ledger {
-    top: auto;
-    bottom: calc(var(--mi-inset-bottom) + 8px);
+    top: calc(44px + env(safe-area-inset-top, 0px));
     right: 6px;
-    width: 170px;
+    width: 150px;
+  }
+  .gn-ledger-lcd {
+    font-size: 14px;
   }
 }
 
