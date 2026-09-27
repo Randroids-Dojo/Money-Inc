@@ -214,6 +214,9 @@ function shortSign(name: string): string {
 export function buildLotVisuals(eco: Economy): LotVisual[] {
   const out: LotVisual[] = [];
   const city = eco.city;
+  // Genesis Mode: lots where a decision is waiting for the player (true = it stops the clock)
+  const decisions = new Map<number, boolean>();
+  if (eco.genesis) for (const s of eco.genesis.open()) if (s.lotId >= 0) decisions.set(s.lotId, (decisions.get(s.lotId) ?? false) || s.blocking);
   for (const lot of city.lots) {
     const use = eco.lotUse.get(lot.id);
     let spec: BuildingSpriteSpec;
@@ -286,6 +289,17 @@ export function buildLotVisuals(eco: Economy): LotVisual[] {
           }
           spec = firmSpec(eco, f, lot);
           const proj = f.project >= 0 ? eco.projects.get(f.project) : undefined;
+          if (f.status === 'planned' && !proj) {
+            // a business that so far exists only on paper (Genesis Mode): pegged-out land and a plan
+            spec = { ...base, kind: 'emptylot', level: 1 };
+            signs.push({ kind: 'sign_lot', ...signSpot(lot) });
+            select = { kind: 'firm', id: f.id };
+            label = `${f.name} (proposed)`;
+            detail = 'Plans drawn up — waiting for a loan';
+            icon = 'plan';
+            color = f.color;
+            break;
+          }
           if (f.status === 'planned' && proj && proj.status !== 'complete') {
             // a new business: its premises are still a building site
             const progress = proj.work > 0 ? 1 - proj.remaining / proj.work : 0;
@@ -383,6 +397,12 @@ export function buildLotVisuals(eco: Economy): LotVisual[] {
           break;
         }
       }
+    }
+    const waiting = decisions.get(lot.id);
+    if (waiting !== undefined && icon !== 'alarm') {
+      icon = 'decision';
+      urgent = waiting;
+      detail = detail ? `${detail} · a decision is waiting for you` : 'A decision is waiting for you';
     }
     const sprite = buildingSprite(spec);
     const p = tileToScreen(lot.x, lot.y);

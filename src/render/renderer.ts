@@ -11,6 +11,7 @@ import type { Game, Lens, Selection } from '../game/game';
 import { FIRST_BANK_ORIGIN, ORIGIN_LEGACY, ORIGIN_PUBLIC, MAX_ORIGINS } from '../sim/ledger';
 import { unitValue } from '../sim/banking';
 import { isUiEvent } from '../ui';
+import { drawTrace, type TraceView } from './traceOverlay';
 
 interface Drawable {
   sort: number;
@@ -65,6 +66,8 @@ export class Renderer {
   private bankDoors = new Map<number, { x: number; y: number; dir: Dir }>();
   /** called when the player clicks something on the map */
   onPick: (sel: Selection, screen: { x: number; y: number }) => void = () => {};
+  /** Genesis Mode trace: what to light up while the rest of the town dims */
+  traceView: TraceView | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -152,6 +155,12 @@ export class Renderer {
       return right ? { x: lot.x + lot.w + 0.14, y: Math.max(lot.y + 0.1, t.y - 0.1), dir: 1 } : { x: Math.max(lot.x + 0.1, t.x - 0.1), y: lot.y + lot.d + 0.14, dir: 0 };
     }
     return right ? { x: lot.x + lot.w + 0.14, y: lot.y + 0.3, dir: 1 } : { x: lot.x + 0.3, y: lot.y + lot.d + 0.14, dir: 0 };
+  }
+
+  /** Rebuild the lot visuals on the next frame (after something changed between days). */
+  invalidate(): void {
+    this.dirty = true;
+    this.lastLinkKey = '';
   }
 
   lotVisual(lotId: number): LotVisual | undefined {
@@ -309,12 +318,21 @@ export class Renderer {
     for (const it of items) it.draw(ctx);
 
     // lens (data view)
-    if (this.game.lens !== 'none') this.drawLens(ctx, this.game.lens);
+    if (this.game.lens !== 'none' && !this.traceView) this.drawLens(ctx, this.game.lens);
+    // trace mode: the connected town lights up
+    if (this.traceView)
+      drawTrace(
+        ctx,
+        { lot: (id) => this.lotById.get(id), lotAnchor: (id, r) => this.lotAnchor(id, r), agentAnchor: this.agentAnchor, view: (m) => cam.view(m) },
+        this.traceView,
+        cam.zoom,
+        this.time,
+      );
     // selection & hover outlines
     this.drawHighlights(ctx);
     // money in motion and relationships
-    if (this.game.showLinks) this.effects.drawLinks(ctx, cam.zoom);
-    if (this.game.showFlows) this.effects.drawCoins(ctx, cam.zoom);
+    if (this.game.showLinks && !this.traceView) this.effects.drawLinks(ctx, cam.zoom);
+    if (this.game.showFlows && !this.traceView) this.effects.drawCoins(ctx, cam.zoom);
     this.effects.drawBursts(ctx);
     this.drawIcons(ctx);
     this.effects.drawTexts(ctx, cam.zoom);

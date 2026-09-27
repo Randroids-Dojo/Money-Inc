@@ -31,6 +31,8 @@ export interface GameListeners {
   month: (() => void)[];
   select: (() => void)[];
   newGame: (() => void)[];
+  /** Genesis Mode: a decision that stops the clock has come up */
+  attention: (() => void)[];
 }
 
 export class Game {
@@ -52,7 +54,7 @@ export class Game {
   /** flows and events produced since the renderer last drained them */
   flows: FlowEvent[] = [];
   events: SimEvent[] = [];
-  readonly on: GameListeners = { day: [], month: [], select: [], newGame: [] };
+  readonly on: GameListeners = { day: [], month: [], select: [], newGame: [], attention: [] };
 
   constructor(seed: number, scenario: Scenario) {
     this.seed = seed;
@@ -95,8 +97,26 @@ export class Game {
     for (const f of this.on.select) f();
   }
 
+  /** Genesis Mode: is a decision holding up time (the first loan, a failing bank, a run)? */
+  blocked(): boolean {
+    const g = this.eco.genesis;
+    return !!g && g.situations.some((s) => s.status === 'open' && s.blocking);
+  }
+
+  /** Stop the clock for a decision and tell the UI. */
+  private holdForDecision(): void {
+    const g = this.eco.genesis;
+    if (g) g.pauseRequested = false;
+    if (this.speed !== 0) this.setSpeed(0);
+    for (const f of this.on.attention) f();
+  }
+
   /** Advance the clock by `dt` real seconds. Returns the number of days simulated. */
   tick(dt: number): number {
+    if (this.eco.genesis?.pauseRequested || (this.speed !== 0 && this.blocked())) {
+      this.holdForDecision();
+      return 0;
+    }
     if (this.speed === 0) return 0;
     this.acc += Math.min(0.25, dt) * this.speed * DAYS_PER_SECOND;
     let steps = 0;
@@ -106,6 +126,11 @@ export class Game {
       this.acc -= 1;
       this.stepDay();
       steps++;
+      if (this.eco.genesis?.pauseRequested) {
+        this.holdForDecision();
+        this.acc = 0;
+        break;
+      }
     }
     if (steps >= maxSteps) this.acc = Math.min(this.acc, 1);
     this.dayFrac = this.acc;

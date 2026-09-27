@@ -118,4 +118,6 @@ export type IconKind =
   | 'down' // red down arrow
   | 'house' // housing
   | 'person' // hiring / jobs
-  | 'lock'; // frozen / failed
+  | 'lock' // frozen / failed
+  | 'decision' // a decision is waiting for the player (Genesis Mode)
+  | 'plan'; // a proposed business: plans, no building yet

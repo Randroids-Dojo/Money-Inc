@@ -11,7 +11,7 @@ import { defaultPolicy, SCENARIOS, type Scenario } from '../../sim/setup';
 import { generateCity } from '../../world/city';
 import type { UIContext } from './context';
 
-const ORDER: Scenario[] = ['classic', 'easy', 'fragile', 'tight'];
+const ORDER: Scenario[] = ['classic', 'easy', 'fragile', 'tight', 'genesis'];
 
 const ICONS: Record<Scenario, string> = {
   classic: '🏘️',
@@ -146,7 +146,7 @@ export function showIntro(ctx: UIContext, onStart: (seed: number, scenario: Scen
       {
         type: 'button',
         role: 'radio',
-        class: 'mi-intro-card',
+        class: ['mi-intro-card', id === 'genesis' && 'is-wide'],
         dataset: { scenario: id },
         onclick: () => select(id),
       },
@@ -156,14 +156,16 @@ export function showIntro(ctx: UIContext, onStart: (seed: number, scenario: Scen
         { class: 'mi-intro-card-main' },
         h('span', { class: 'mi-intro-card-title' }, sc.title),
         h('span', { class: 'mi-intro-card-blurb' }, sc.blurb),
-        h(
-          'span',
-          { class: 'mi-intro-card-tags' },
-          badge(`Rate ${pct(pol.policyRate, 0)}`, 'muted'),
-          badge(`Capital ${pct(pol.capitalRequirement, 0)}`, 'muted'),
-          pol.depositInsurance === 'none' ? badge('No deposit insurance', 'bad') : null,
-          pol.emergencyLiquidity === 'none' ? badge('No rescue loans', 'bad') : null,
-        ),
+        id === 'genesis'
+          ? h('span', { class: 'mi-intro-card-tags' }, badge('New mode', 'info'), badge('Starts from $0', 'muted'), badge('You approve the loans', 'muted'), badge('Trace every loan', 'muted'))
+          : h(
+              'span',
+              { class: 'mi-intro-card-tags' },
+              badge(`Rate ${pct(pol.policyRate, 0)}`, 'muted'),
+              badge(`Capital ${pct(pol.capitalRequirement, 0)}`, 'muted'),
+              pol.depositInsurance === 'none' ? badge('No deposit insurance', 'bad') : null,
+              pol.emergencyLiquidity === 'none' ? badge('No rescue loans', 'bad') : null,
+            ),
       ),
       h('span', { class: 'mi-intro-card-check', 'aria-hidden': 'true' }, glyph('check', 2)),
     );
@@ -710,6 +712,10 @@ function injectStyle(): void {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+.mi-intro-card.is-wide {
+  grid-column: 1 / -1;
+  min-height: 0;
 }
 .mi-intro-card {
   position: relative;

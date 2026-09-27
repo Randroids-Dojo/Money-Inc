@@ -3,12 +3,12 @@
 
 import { CFG, DAYS_PER_MONTH, SECTORS } from './config';
 import type { Economy } from './economy';
-import { Project, Unit, type Firm, type ProjectKind } from './agents';
+import { Project, Unit, type Firm, type Household, type ProjectKind } from './agents';
 import { buyGoods } from './markets';
 import { openFirm, monthlyCosts } from './firms';
 import { originate, requestWorkingCapital, requestLoan, unitValue, type LoanApp, type LoanOffer } from './banking';
 import type { Lot } from '../world/city';
-import { listUnit } from './housing';
+import { listUnit, moveIn } from './housing';
 import { fmtMoney, pct } from './format';
 import { OUTSIDE_BUILD_MARKUP, outsideBuildPrice } from './genesis/trade';
 import { pickNearLot } from './genesis/plans';
@@ -71,6 +71,8 @@ export function startProject(
 
 interface ProjectWithPrice extends Project {
   unitPrice: number;
+  /** paid in full up front (a family's self-build): the builder, not the client, pays any extra crews */
+  prepaid?: boolean;
 }
 
 /** Builders spread their daily capacity over their active projects. */
@@ -198,7 +200,7 @@ function workOn(eco: Economy, b: Firm, p: Project, alloc: number): void {
  */
 function topUp(eco: Economy, p: Project, remainingBefore: number): void {
   if (!p || p.status !== 'active' || p.remaining <= 0.5) return;
-  const payer = eco.firm(p.clientId) ?? eco.household(p.clientId);
+  const payer = (p as ProjectWithPrice).prepaid ? eco.firm(p.builderId) : eco.firm(p.clientId) ?? eco.household(p.clientId);
   if (!payer || (payer.kind === 'firm' && payer.status === 'closed')) return;
   const days = p.target.kind === 'apartment' ? 240 : p.kind === 'housing' || p.kind === 'homes' ? 115 : 150;
   const pace = p.work / days;
@@ -326,14 +328,25 @@ function completeProject(eco: Economy, p: Project): void {
       if (loan) loan.note(eco.day, `${f.name} opened its doors`, undefined, f.id, 'good');
     }
   } else if (p.kind === 'homes') {
-    // company housing: the client keeps the homes and lets them
+    // company housing: the client keeps the homes and lets them; a family moves into its own
     const units = eco.lotUnits.get(p.lotId) ?? [];
+    const family = eco.household(p.clientId);
     for (const uid of units) {
       const u = eco.units[uid];
       u.building = false;
       u.rent = u.baseRent * u.quality * eco.market.rentIndex;
+      if (family && !family.departed && u.ownerId === family.id) {
+        if (!family.ownedUnits.includes(uid)) family.ownedUnits.push(uid);
+        moveIn(eco, family, u);
+        family.note(eco.day, 'Moved into the home they had built', 'good', p.paid);
+      } else if (family && u.ownerId === family.id) listUnit(eco, u, family.id, unitAsk(eco, u), true);
     }
     eco.lotUse.set(p.lotId, { type: 'res', id: p.lotId });
+    if (family) {
+      eco.headline(`${family.name} move into the home they had built`, 'good', family.id, p.lotId, `sdone-${p.lotId}`, 0);
+      eco.genesis?.onProjectComplete(p);
+      return;
+    }
     if (loan && units.length) {
       // the loan is now secured on the finished home
       loan.collateral = { kind: 'property', ref: units[0], value: unitValue(eco, units[0]) };
@@ -545,6 +558,35 @@ export function startCompanyHomes(
   eco.lotUnits.set(lot.id, [u.id]);
   f.note(eco.day, `Started building a cottage for its workers${loanId >= 0 ? ` with a ${fmtMoney(eco.loans.get(loanId)?.principal0 ?? 0)} loan` : ''}`, 'good', cost);
   eco.event('construction_start', f.id, cost, p.builderId, reason);
+  return p;
+}
+
+/**
+ * Genesis Mode: a family has a home built for itself. It pays the whole price up front — its
+ * savings plus the mortgage — to a local builder with room in its schedule, or to crews from
+ * across the river.
+ */
+export function startSelfBuild(eco: Economy, h: Household, lot: Lot, unit: Unit, workReal: number, loanId: number): Project {
+  let builder = chooseBuilder(eco);
+  if (builder && (!canTakeOn(builder, backlog(eco, builder) + workReal) || builder.price > outsideBuildPrice(eco))) builder = undefined;
+  const price = builder ? builder.price : outsideBuildPrice(eco);
+  const contract = workReal * price;
+  const amount = Math.min(contract, Math.max(0, h.acct.balance));
+  const paid = builder ? eco.ledger.transfer(h.acct, builder.acct, amount, 'invest', loanId >= 0 ? loanId : undefined) : eco.ledger.toOutside(h.acct, amount, 'import', eco.world.id);
+  if (builder) builder.m.revenue += paid;
+  else if (eco.genesis) eco.genesis.trade.outsideBuild += paid;
+  if (loanId >= 0) eco.loans.get(loanId)?.spend(builder ? builder.id : eco.world.id, paid, builder ? 'building the family home' : 'crews from across the river');
+  const reason = `${h.name} had a home built with ${loanId >= 0 ? 'a mortgage' : 'their savings'}`;
+  const p = new Project(eco.newId(), 'homes', lot.id, h.id, builder ? builder.id : eco.world.id, paid, workReal * Math.min(1, paid / Math.max(1, contract)), 0, reason, eco.day, { kind: 'house', level: 1, units: 1 });
+  (p as ProjectWithPrice).unitPrice = 0;
+  (p as ProjectWithPrice).prepaid = true;
+  p.paid = paid;
+  p.loanId = loanId;
+  eco.projects.set(p.id, p);
+  eco.lotUse.set(lot.id, { type: 'project', id: p.id });
+  eco.lotUnits.set(lot.id, [unit.id]);
+  h.note(eco.day, `Paid ${builder ? builder.name : 'crews from across the river'} ${fmtMoney(paid)} to build a home`, 'good', paid, builder?.id);
+  eco.event('construction_start', h.id, paid, p.builderId, reason);
   return p;
 }
 

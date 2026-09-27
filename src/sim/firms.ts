@@ -10,7 +10,7 @@ import { originate, requestWorkingCapital, requestLoan, shopForLoan, defaultLoan
 import { smallJob, startProject } from './construction';
 import { fmtMoney, pct } from './format';
 import { firmName } from './names';
-import { regionWage } from './genesis/trade';
+import { priceCeiling, regionWage } from './genesis/trade';
 
 // ============================================================================ daily
 
@@ -154,6 +154,8 @@ function reviewFirm(eco: Economy, f: Firm): void {
   const drift = mk.inflationExpect / 12;
   f.price *= 1 + drift + pressure + pull;
   f.price = Math.max(0.05, f.price);
+  // (Genesis Mode: a small town's businesses compete with the whole region: they cannot charge more)
+  if (eco.genesis) f.price = Math.min(f.price, priceCeiling(eco, f.sector));
   f.discounting = pressure + pull < -0.004;
 
   // ---- productivity creeps up; wages share in it

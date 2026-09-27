@@ -16,7 +16,7 @@ import { IMPORT_MARKUP, outsideBuildPrice, regionPrice } from './trade';
 
 /** Small frontier businesses: lighter premises than the standard town's established firms. */
 export const GENESIS_SECTOR: Record<Sector, { A: number; kappa: number; premisesShare: number; staff: number }> = {
-  factory: { A: 6400, kappa: 5.5, premisesShare: 0.4, staff: 2 },
+  factory: { A: 7800, kappa: 5.5, premisesShare: 0.4, staff: 2 },
   retail: { A: 13000, kappa: 3.5, premisesShare: 0.55, staff: 2 },
   service: { A: 6600, kappa: 5, premisesShare: 0.6, staff: 2 },
   builder: { A: 8800, kappa: 2.5, premisesShare: 0.35, staff: 2 },
@@ -321,14 +321,25 @@ export function findOpportunities(eco: Economy, recent: TradeMonth[]): Opportuni
   } else if (builders > 0 && vac > unemployed + 2 && rentals === 0 && builders < 1 + Math.floor(eco.population() / 60)) {
     out.push({ sector: 'builder', reason: 'Homes cannot be built fast enough for the people businesses want to hire', market: 40_000, staff: 2 });
   }
+  // how busy the town's existing shops and services already are (no point opening another beside idle ones)
+  const busy = (s: Sector) => {
+    let u = 0;
+    let cap = 0;
+    for (const f of alive(s)) {
+      if (f.status !== 'open') return 0; // one is still opening: wait and see
+      u += f.last.units + f.last.unmet;
+      cap += Math.max(1, f.capacity);
+    }
+    return cap > 0 ? u / cap : 1;
+  };
   // 2. goods bought across the river (a shop needs enough customers to keep one person busy)
   const goods = avg('importsConsumer');
-  if (goods > perWorker('retail') * 0.9) {
+  if (goods > perWorker('retail') * 0.9 && busy('retail') > 0.75) {
     out.push({ sector: 'retail', reason: `Locals spend about ${Math.round(goods / 1000)}K a month on goods bought across the river`, market: goods, staff: staffFor('retail', goods) });
   }
   // 3. services people go without
   const svc = avg('importsServices');
-  if (svc > perWorker('service') * 0.9) {
+  if (svc > perWorker('service') * 0.9 && busy('service') > 0.75) {
     out.push({ sector: 'service', reason: `People travel out of town for about ${Math.round(svc / 1000)}K a month of services, or go without`, market: svc, staff: staffFor('service', svc) });
   }
   // 4. factories turning away orders

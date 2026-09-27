@@ -111,7 +111,8 @@ export interface LoanReview {
   bankReason?: string;
   requested: number;
   plan?: BusinessPlan;
-  home?: { unitId: number; lotId: number; price: number; cash: number; income: number; sellerId: number; investment: boolean };
+  /** build: the family will have the home built (unitId is -1 until it is) */
+  home?: { unitId: number; lotId: number; price: number; cash: number; income: number; sellerId: number; investment: boolean; build?: boolean };
   /** homes: built for the borrower to keep and let (company housing), not to sell */
   dev?: { units: number; cost: number; saleValue: number; lotId: number; homes?: boolean };
   /** resize options (amounts) */

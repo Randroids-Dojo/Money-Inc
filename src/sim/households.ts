@@ -158,7 +158,8 @@ function reviewHousehold(eco: Economy, h: Household): void {
   const ds = debtService(h);
 
   // ---- surplus savings go into the fund; savings are drawn down when the account runs low
-  if (deposits > buffer * 1.4 && deposits > 15_000 && eco.fund.fear < 0.8) {
+  // (Genesis Mode: there is no investment fund in town until the town is big enough to attract one)
+  if (deposits > buffer * 1.4 && deposits > 15_000 && eco.fund.fear < 0.8 && (!eco.genesis || eco.genesis.fundOpen)) {
     const amt = CFG.fundInvestShare * (deposits - buffer * 1.2);
     const paid = eco.ledger.transfer(h.acct, eco.fund.acct, amt, 'fund');
     const units = paid / nav;

@@ -32,6 +32,24 @@ export function regionWage(eco: Economy): number {
 }
 
 /**
+ * The most a town business can charge before its customers go elsewhere: shoppers to the
+ * region's stores, the region's buyers to other workshops, clients to crews from across the river.
+ */
+export function priceCeiling(eco: Economy, sector: 'retail' | 'service' | 'factory' | 'builder'): number {
+  const rp = regionPrice(eco);
+  switch (sector) {
+    case 'retail':
+      return rp * IMPORT_MARKUP;
+    case 'service':
+      return rp * 1.3;
+    case 'factory':
+      return rp * 1.08;
+    default:
+      return rp * OUTSIDE_BUILD_MARKUP;
+  }
+}
+
+/**
  * Share of their spending locals still bring to a shop whose price has climbed above what the same
  * thing costs across the river (imported goods carry the merchant's markup; services mean a trip).
  */

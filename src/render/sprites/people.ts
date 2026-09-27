@@ -119,6 +119,8 @@ const SYMBOLS: Record<IconKind, string[]> = {
   house: ['....r....', '...rrr...', '..rrrrr..', '.rrrrrrr.', '..wwwww..', '..wbwkw..', '..wwwkw..', '..wwwkw..'],
   person: ['...hhh...', '...sss...', '...sss...', '....s....', '..bbbbb..', '.b.bbb.b.', '...b.b...', '...b.b...'],
   lock: ['...kkk...', '..k...k..', '..k...k..', '.yyyyyyy.', '.yyykyyy.', '.yyykyyy.', '.yyyyyyy.', '.ddddddd.'],
+  decision: ['..kkkkk..', '.kk...kk.', '......kk.', '....kkk..', '...kk....', '...kk....', '.........', '...kk....'],
+  plan: ['bbbbbbbbb', 'bWbbbbbWb', 'bWWWWWWWb', 'bWbbWbbWb', 'bWbbWbbWb', 'bWWWWWWWb', 'bbbbbbbbb', '.........'],
 };
 
 const ICON_BG: Partial<Record<IconKind, Col>> = {
@@ -127,6 +129,8 @@ const ICON_BG: Partial<Record<IconKind, Col>> = {
   money: rgb(214, 246, 206),
   zzz: rgb(214, 228, 250),
   lock: rgb(226, 226, 232),
+  decision: rgb(255, 222, 120),
+  plan: rgb(214, 230, 252),
 };
 
 const iconCache = new Map<string, Sprite>();

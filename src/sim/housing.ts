@@ -54,7 +54,7 @@ export function findRental(eco: Economy, h: Household): boolean {
   return true;
 }
 
-function moveIn(eco: Economy, h: Household, u: Unit): void {
+export function moveIn(eco: Economy, h: Household, u: Unit): void {
   if (h.homeUnit >= 0) {
     const old = eco.units[h.homeUnit];
     if (old && old.occupantId === h.id) old.occupantId = -1;

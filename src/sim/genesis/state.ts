@@ -18,7 +18,9 @@ import { invalidateMetrics, metrics, originate, requestLoan, shopForLoan, setSta
 import { fire, hire } from '../markets';
 import { createHousehold, departHousehold } from '../households';
 import { findRental, vacantRentals } from '../housing';
-import { startCompanyHomes, startProject } from '../construction';
+import { startCompanyHomes, startProject, startSelfBuild } from '../construction';
+import { Unit as UnitClass } from '../agents';
+import { debtService } from '../housing';
 import { firmProfit } from '../markets';
 import { monthlyCosts } from '../firms';
 import { fmtMoney, pct } from '../format';
@@ -38,7 +40,7 @@ import {
   pickNearLot,
   type TradeMonth,
 } from './plans';
-import { bankOpinion, buildReview, decideLoan, loanLabel } from './review';
+import { buildReview, decideLoan, loanLabel } from './review';
 import {
   applyCharter,
   applyConstraint,
@@ -122,6 +124,8 @@ export class Genesis {
   macroNews = false;
   /** businesses are hiring but newcomers have nowhere to live (updated monthly) */
   housingShortage = false;
+  /** an investment fund has set up in town (it takes savings once the town is big enough) */
+  fundOpen = false;
   private nextSit = 1;
   private nextDec = 1;
   private reviewed = new Set<LoanPurpose>();
@@ -135,6 +139,8 @@ export class Genesis {
   private vacMonths = new Map<number, number>();
   private homesCooldown = new Map<number, number>();
   private lastRaise = new Map<number, number>();
+  /** families waiting to hear whether they can build */
+  private selfBuilders = new Set<number>();
   private spendSeen = new Map<string, number>();
   /** loans that were ever in a Genesis review, and whether the player decided them */
   private streets: string[] = [];
@@ -259,7 +265,7 @@ export class Genesis {
     if (!this.shouldReview(app)) return false;
     const openLoans = this.open().filter((s) => s.kind === 'loan').length;
     if (openLoans >= 5) return false;
-    const ctx = (opts.context ?? {}) as { plan?: BusinessPlan; unit?: Unit; price?: number; sellerId?: number; investment?: boolean; lotId?: number; units?: number; saleValue?: number; reason?: string; homes?: boolean };
+    const ctx = (opts.context ?? {}) as { plan?: BusinessPlan; unit?: Unit; price?: number; sellerId?: number; investment?: boolean; lotId?: number; units?: number; saleValue?: number; reason?: string; homes?: boolean; build?: boolean };
     let title = '';
     let text = '';
     let lotId = eco.lotOf(app.borrower.id);
@@ -275,6 +281,13 @@ export class Genesis {
       extra.plan = expansionPlan(eco, b, app, (opts.context as { expansion?: BusinessPlan['expansion'] } | undefined)?.expansion);
       title = `${b.name} wants to expand`;
       text = `${b.name} is running flat out and turning customers away. It asks for ${fmtMoney(app.amount)} to add capacity.`;
+    } else if (app.purpose === 'home' && b.kind === 'household' && ctx.build && ctx.lotId !== undefined) {
+      extra.home = { unitId: -1, lotId: ctx.lotId, price: ctx.price ?? app.amount, cash: b.acct.balance, income: app.income, sellerId: -1, investment: false, build: true };
+      lotId = ctx.lotId;
+      const first = !this.flags.has('first_mortgage');
+      title = first ? `The town's first mortgage?` : `${b.name} wants to build a home`;
+      text = `${b.name}${b.lodging ? ', who boards with a family,' : ''} wants to have a home built at ${this.lotAddress(ctx.lotId)} for ${fmtMoney(extra.home.price)}, and asks ${app.borrower.acct.bank.name} for a ${fmtMoney(app.amount)} mortgage to pay for it.`;
+      b.buyPending = true;
     } else if ((app.purpose === 'home' || app.purpose === 'investment_property') && b.kind === 'household' && ctx.unit) {
       const u = ctx.unit;
       extra.home = { unitId: u.id, lotId: u.lotId, price: ctx.price ?? app.amount, cash: b.acct.balance, income: app.income, sellerId: ctx.sellerId ?? -1, investment: !!ctx.investment };
@@ -300,7 +313,7 @@ export class Genesis {
     }
     const wrapped = (d: LoanDecision, a: LoanApp) => {
       if (extra.home) {
-        const u = eco.units[extra.home.unitId];
+        const u = extra.home.unitId >= 0 ? eco.units[extra.home.unitId] : undefined;
         if (u?.listing && u.listing.pending === -1) u.listing.pending = undefined;
         if (b.kind === 'household') b.buyPending = false;
       }
@@ -309,13 +322,12 @@ export class Genesis {
     const r = buildReview(this, app, app.purpose, wrapped, extra);
     if (!r) {
       if (extra.home) {
-        const u = eco.units[extra.home.unitId];
+        const u = extra.home.unitId >= 0 ? eco.units[extra.home.unitId] : undefined;
         if (u?.listing) u.listing.pending = undefined;
         if (b.kind === 'household') b.buyPending = false;
       }
       return false;
     }
-    text += ` ${bankOpinion(eco, r)}`;
     // until the town has its first business, nothing happens without the player: the world waits
     const founding = app.purpose === 'startup' && this.firstBusinessId < 0;
     r.first = founding && this.counters.loansMade === 0;
@@ -354,7 +366,7 @@ export class Genesis {
       lot: lot ?? undefined,
       staff: idea.staff,
       equity: 0,
-      A: 6800,
+      A: 8000,
       kappa: 5.5,
       budget: [100_000, 60_000, 90_000][Math.min(attempt, 2)],
       pitch: idea.pitch,
@@ -513,15 +525,23 @@ export class Genesis {
     if (building >= Math.max(1, Math.floor(eco.population() / 12))) return;
     const busy = new Set<number>();
     for (const p of eco.projects.values()) if (p.kind === 'homes' && (p.status === 'active' || p.status === 'stalled')) busy.add(p.clientId);
+    // only an established employer can carry a house on its books: a few staff already, one home
+    // for every three of them at most, and profits well above what the loan would cost
+    const owned = new Map<number, number>();
+    for (const u of eco.units) if (u.ownerId >= 0 && eco.firm(u.ownerId)) owned.set(u.ownerId, (owned.get(u.ownerId) ?? 0) + 1);
+    const cottagePayment = (CFG.houseBaseValue * CFG.devCostRatio * buildPrice(eco) * 0.8 * (eco.policy.policyRate + 0.035)) / 12 + (CFG.houseBaseValue * CFG.devCostRatio * buildPrice(eco) * 0.8) / 180;
     const cands = eco.firms.filter(
       (f) =>
         f.status === 'open' &&
         f.sector !== 'builder' &&
         !busy.has(f.id) &&
         f.vacancies > 0 &&
+        f.workers.length >= 2 &&
+        (owned.get(f.id) ?? 0) < Math.max(1, Math.floor(f.workers.length / 2)) &&
         (this.vacMonths.get(f.id) ?? 0) >= 3 &&
         f.health === 'healthy' &&
-        firmProfit(eco, f) > 0 &&
+        firmProfit(eco, f) > 1.2 * cottagePayment &&
+        f.debtService() + cottagePayment < 0.5 * Math.max(1, f.last.revenue - f.last.wages - f.last.inputs) &&
         eco.day >= (this.homesCooldown.get(f.id) ?? 0) &&
         !this.hasPendingLoan(f.id),
     );
@@ -571,6 +591,97 @@ export class Genesis {
       if (eco.lotUse.has(lot.id) || f.status !== 'open') return;
       const loan = originate(eco, d.offer, fin);
       go(loan.id);
+    });
+  }
+
+  /**
+   * Families who have work but no home of their own (boarders and renters) and enough saved for
+   * the down payment have a starter home built, with a mortgage for the rest.
+   */
+  private selfBuild(): void {
+    const eco = this.eco;
+    let active = 0;
+    for (const p of eco.projects.values()) if (p.kind === 'homes' && (p.status === 'active' || p.status === 'stalled') && eco.household(p.clientId)) active++;
+    active += this.selfBuilders.size;
+    if (active >= Math.max(1, Math.floor(eco.population() / 8))) return;
+    const lots = freeLots(eco, 'res', false);
+    if (!lots.length) return;
+    const starter = eco.population() < 30 ? 0.55 : 0.75;
+    const base = CFG.houseBaseValue * starter;
+    const workReal = base * CFG.devCostRatio;
+    const cost = workReal * buildPrice(eco);
+    const value = base * eco.market.hpi;
+    const reserve = CFG.essentials * eco.market.cpi * 2;
+    const minDown = cost * (1 - this.rules.maxLTV) + 1_000;
+    const cands = eco.households.filter(
+      (h) =>
+        !h.departed &&
+        h.employed &&
+        !h.retired &&
+        h.employedDays >= 180 &&
+        h.ownedUnits.length === 0 &&
+        !h.buyPending &&
+        !h.lookingToBuy &&
+        eco.day - h.lastDefaultDay > 1500 &&
+        !this.selfBuilders.has(h.id) &&
+        !this.hasPendingLoan(h.id) &&
+        h.acct.balance - reserve >= minDown,
+    );
+    if (!cands.length || !eco.rng.chance(0.4)) return;
+    const h = eco.rng.pick(cands);
+    const down = Math.min((h.acct.balance - reserve) * 0.9, cost * 0.3);
+    const amount = Math.max(0, Math.round((cost - down) / 1000) * 1000);
+    const lot = pickNearLot(eco, lots);
+    if (!lot) return;
+    eco.lotUse.set(lot.id, { type: 'project', id: -1 }); // spoken for while the bank decides
+    this.selfBuilders.add(h.id);
+    const quality = 0.95 + 0.1 * eco.rng.next();
+    const release = () => {
+      const use = eco.lotUse.get(lot.id);
+      if (use && use.type === 'project' && use.id === -1) eco.lotUse.delete(lot.id);
+      this.selfBuilders.delete(h.id);
+      h.buyPending = false;
+    };
+    const go = (loanId: number, fin?: LoanApp, offer?: LoanOffer) => {
+      const u = new UnitClass(eco.units.length, lot.id, quality, base, CFG.houseBaseRent * starter);
+      u.ownerId = h.id;
+      u.building = true;
+      eco.units.push(u);
+      let id = loanId;
+      if (fin && offer) {
+        fin.collateral = { kind: 'property', ref: u.id, value };
+        const loan = originate(eco, offer, fin);
+        u.mortgage = loan;
+        id = loan.id;
+      }
+      startSelfBuild(eco, h, lot, u, workReal, id);
+    };
+    if (amount <= 5_000) {
+      release();
+      go(-1);
+      return;
+    }
+    const app: LoanApp = {
+      borrower: h,
+      kind: 'mortgage',
+      purpose: 'home',
+      amount,
+      termMonths: CFG.mortgageTerm,
+      amortizing: true,
+      collateral: { kind: 'property', value },
+      income: h.wage,
+      existingDebtService: debtService(h),
+      existingDebt: 0,
+      what: `building a home (${fmtMoney(cost)})`,
+    };
+    requestLoan(eco, app, { review: 'mortgage', context: { build: true, lotId: lot.id, price: cost } }, (d, fin) => {
+      release();
+      if (!d.offer || h.departed || !h.employed || eco.lotUse.has(lot.id)) {
+        if (!d.offer) h.note(eco.day, `Mortgage to build a home refused: ${d.reason}`, 'bad');
+        return;
+      }
+      if (h.acct.balance + fin.amount < cost * 0.97) return;
+      go(-1, fin, d.offer);
     });
   }
 
@@ -1122,6 +1233,21 @@ export class Genesis {
 
   onProjectComplete(p: Project): void {
     const eco = this.eco;
+    const family = p.kind === 'homes' ? eco.household(p.clientId) : undefined;
+    if (family) {
+      for (const uid of eco.lotUnits.get(p.lotId) ?? []) {
+        const u = eco.units[uid];
+        this.unitNode(u);
+        this.hh(family);
+        this.lineage.openEdge('bought', nodeKey('household', family.id), nodeKey('unit', uid), eco.day, `had it built for ${fmtMoney(p.paid)}`, p.paid);
+        const builder = eco.firm(p.builderId);
+        if (builder) this.lineage.edge('built', nodeKey('firm', builder.id), nodeKey('unit', uid), eco.day, p.paid, 'built it');
+        const loan = p.loanId >= 0 ? eco.loans.get(p.loanId) : undefined;
+        if (loan) this.lineage.edge('secured', nodeKey('loan', loan.id), nodeKey('unit', uid), eco.day, loan.principal0, 'mortgage on');
+      }
+      this.milestone('first_self_build', 3, 'FIRST FAMILY HOME', `${family.name} move into the home they had built${p.loanId >= 0 ? ` with a mortgage from ${eco.nameOf(eco.loans.get(p.loanId)?.originatorId ?? -1)}` : ''}.`, family.id, p.lotId);
+      return;
+    }
     if (p.kind === 'homes') {
       for (const uid of eco.lotUnits.get(p.lotId) ?? []) {
         const u = eco.units[uid];
@@ -1211,12 +1337,14 @@ export class Genesis {
     // failed banks' deposit write-downs are part of the money story too
     this.entryMonthly();
     this.companyHousing();
+    this.selfBuild();
     this.chartersMonthly();
     this.eraCheck();
     this.syncLineage();
     this.fundCheck();
     this.returnFled();
     this.macroNews = eco.population() >= 20;
+    if (!this.fundOpen && eco.population() >= 40) this.fundOpen = true;
     {
       let vac = 0;
       let unemployed = 0;
@@ -1429,11 +1557,12 @@ export class Genesis {
       if (c.collateral === 'none') terms.push('unsecured');
       if (r.home) {
         const dp = 1 - c.amount / Math.max(1, r.home.price);
-        text = `Approved ${bname}'s ${fmtMoney(c.amount)} mortgage for ${b.name} to buy ${this.address(r.home.unitId)} (${pct(dp, 0)} down)${terms.length > 1 ? ` — ${terms.slice(1).join(', ')}` : ''}.`;
+        const what = r.home.build ? `build a home at ${this.lotAddress(r.home.lotId)}` : `buy ${this.address(r.home.unitId)}`;
+        text = `Approved ${bname}'s ${first ? 'first ' : ''}${fmtMoney(c.amount)} mortgage for ${b.name} to ${what} (${pct(dp, 0)} down)${terms.length > 1 ? ` — ${terms.slice(1).join(', ')}` : ''}.`;
       } else text = `Approved ${bname}'s ${first ? 'first ' : ''}${fmtMoney(c.amount)} ${kind} to ${b.name}${terms.length ? ` — ${terms.join(', ')}` : ''}.`;
     } else text = `Turned down ${b.name}'s ${fmtMoney(r.requested)} ${kind}${r.offer ? ` (${bank?.short ?? 'the bank'} would have lent)` : ''}.`;
     const keys = [nodeKey('bank', r.bankId), nodeKey(b.kind === 'firm' ? 'firm' : 'household', b.id)];
-    if (r.home) keys.push(nodeKey('unit', r.home.unitId));
+    if (r.home && r.home.unitId >= 0) keys.push(nodeKey('unit', r.home.unitId));
     const watch: DecisionRecord['watch'] =
       r.purpose === 'home' || r.purpose === 'investment_property'
         ? ['mortgageLending12', 'hpi', 'construction', 'leverage']
@@ -1548,15 +1677,22 @@ export class Genesis {
     const eco = this.eco;
     const u = eco.units[unitId];
     if (!u) return 'a home';
-    const lot = eco.city.lots[u.lotId];
+    const units = eco.lotUnits.get(u.lotId) ?? [];
+    const street = this.lotAddress(u.lotId);
+    if (units.length > 1) return `Flat ${units.indexOf(unitId) + 1}, ${street}`;
+    return street;
+  }
+
+  /** Street address of a lot ("12 Oak Street"). */
+  lotAddress(lotId: number): string {
+    const lot = this.eco.city.lots[lotId];
+    if (!lot) return 'a lot in town';
     const vertical = lot.facing === 2 || lot.facing === 8;
     const road = lot.road;
     const streetIdx = vertical ? road.x : road.y;
     const along = vertical ? lot.y : lot.x;
     const name = this.streets[Math.floor(streetIdx / 5) % this.streets.length] + (vertical ? ' Avenue' : ' Street');
     const number = along * 2 + (vertical ? 1 : 2);
-    const units = eco.lotUnits.get(u.lotId) ?? [];
-    if (units.length > 1) return `Flat ${units.indexOf(unitId) + 1}, ${number} ${name}`;
     return `${number} ${name}`;
   }
 }

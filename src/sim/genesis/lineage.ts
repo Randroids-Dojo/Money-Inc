@@ -187,7 +187,15 @@ export class Lineage {
         const d = cur.depth + c;
         if (d > maxDepth) continue;
         const prev = seen.get(e.to);
-        if (prev && prev.depth <= d) continue;
+        if (prev && prev.depth < d) continue;
+        if (prev && prev.depth === d) {
+          // equally close: remember the earliest relationship (the first loan, not the latest)
+          if (!prev.upstream && prev.via && e.day < prev.via.day) {
+            prev.parent = k;
+            prev.via = e;
+          }
+          continue;
+        }
         seen.set(e.to, { key: e.to, depth: d, parent: k, via: e });
         push(e.to, c === 0);
       }

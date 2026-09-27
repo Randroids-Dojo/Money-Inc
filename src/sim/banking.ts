@@ -479,6 +479,8 @@ function serviceLoan(eco: Economy, l: Loan): void {
     if (l.missed > 0) {
       l.note(eco.day, `Borrower caught up on missed payments`, undefined, undefined, 'good');
       l.missed = 0;
+      // (Genesis Mode: a business that has caught up on every loan is no longer behind)
+      if (eco.genesis && borrower.kind === 'firm' && !borrower.loans.some((x) => x.active && x.missed > 0)) borrower.missed = 0;
     }
     l.status = 'performing';
     l.monthsPaid++;
@@ -683,6 +685,7 @@ function closeRepaid(eco: Economy, l: Loan, borrower: Household | Firm): void {
   }
   releaseFromBank(eco, l);
   if (l.holder.kind === 'pool') eco.pools.get(l.holder.id)?.recompute();
+  if (eco.genesis && borrower.kind === 'firm' && !borrower.loans.some((x) => x.active && x.missed > 0)) borrower.missed = 0;
   eco.genesis?.onLoanClosed(l);
 }
 

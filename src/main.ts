@@ -14,11 +14,15 @@ import { openCentralBankWindow } from './game/ui/cbWindow';
 import { openCityHallWindow, openFundWindow, openLandWindow, openProjectWindow } from './game/ui/miscWindows';
 import { extraUi } from './game/ui/extra';
 import { Advisor } from './game/ui/advisor';
+import { SCENARIOS, type Scenario } from './sim/setup';
+import { installGenesisUi } from './game/ui/genesis';
+import { autoPlay, type AutoStyle } from './sim/genesis/autoplay';
 
 const params = new URLSearchParams(location.search);
 const app = document.getElementById('app')!;
 const seed = Number(params.get('seed') ?? Math.floor(1 + Math.random() * 9999));
-const game = new Game(seed, 'classic');
+const scenarioParam = params.get('scenario');
+const game = new Game(seed, scenarioParam && scenarioParam in SCENARIOS ? (scenarioParam as Scenario) : 'classic');
 const renderer = new Renderer(app, game);
 mountUI();
 installTooltips();
@@ -113,6 +117,8 @@ const ctx: UIContext = {
 };
 
 renderer.onPick = (sel, screen) => {
+  // Genesis Mode: while tracing, clicking the town follows its connections
+  if (genesis.trace.active() && genesis.trace.onPick(sel)) return;
   game.select(sel);
   if (sel) ctx.open(sel, screen);
 };
@@ -147,6 +153,7 @@ const hud = createHud(ctx, {
 });
 
 const advisor = new Advisor(ctx, hud);
+const genesis = installGenesisUi(ctx, hud);
 if (params.has('notips')) advisor.enabled = false;
 
 // ---- keyboard
@@ -222,6 +229,21 @@ window.addEventListener('keydown', (e) => {
     case '?':
       extraUi.help(ctx);
       break;
+    case 'k':
+    case 'K':
+      if (!genesis.active()) return;
+      genesis.openDesk();
+      break;
+    case 'j':
+    case 'J':
+      if (!genesis.active()) return;
+      genesis.openJournal();
+      break;
+    case 't':
+    case 'T':
+      if (!genesis.active()) return;
+      genesis.trace.toggle();
+      break;
     default:
       return;
   }
@@ -232,6 +254,20 @@ window.addEventListener('keydown', (e) => {
 (window as unknown as { game: Game; ctx: UIContext }).game = game;
 (window as unknown as { game: Game; ctx: UIContext }).ctx = ctx;
 if (params.has('speed')) game.setSpeed(Number(params.get('speed')) as Speed);
+// (testing aid: ?ff=<days>&auto=bank|yes fast-forwards a Genesis town, deciding like the given player)
+if (params.has('ff') && game.eco.genesis) {
+  const eco = game.eco;
+  const style = (params.get('auto') ?? 'bank') as AutoStyle;
+  eco.recordVisuals = false;
+  for (let d = 0, n = Number(params.get('ff')); d < n; d++) {
+    autoPlay(eco, style);
+    eco.step();
+  }
+  eco.recordVisuals = true;
+  eco.flowBuffer.length = 0;
+  eco.eventBuffer.length = 0;
+  renderer.invalidate();
+}
 let last = performance.now();
 let uiClock = 0;
 function loop(now: number): void {

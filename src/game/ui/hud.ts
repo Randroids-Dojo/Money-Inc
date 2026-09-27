@@ -32,6 +32,13 @@ export interface Hud {
   toggleFlows(): void;
   /** Show an advisor tip (blue toast) with an optional "show me" action. */
   tip(text: string, show?: () => void): void;
+  /**
+   * A game mode's own tools (shown before the standard ones) and indicators (replacing the
+   * standard ones). Pass nulls to restore the standard strip.
+   */
+  setMode(tools: HTMLElement | null, stats: (() => HTMLElement[]) | null): void;
+  /** Push the top-right alert stack down (to make room for a mode's panel). */
+  setAlertsTop(px: number): void;
 }
 
 export function createHud(ctx: UIContext, act: HudActions): Hud {
@@ -55,7 +62,11 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
     iconButton('🎲', 'New city', () => act.newGame(), { small: true }),
   );
   tools.classList.add('gm-hud-tools');
-  const hud = strip(stripGroup(dateEl), speedGroup, news, statsGroup, tools);
+  const modeTools = stripGroup();
+  modeTools.classList.add('gm-hud-tools');
+  modeTools.hidden = true;
+  let modeStats: (() => HTMLElement[]) | null = null;
+  const hud = strip(stripGroup(dateEl), speedGroup, news, statsGroup, modeTools, tools);
   hud.classList.add('gm-hud');
   document.body.appendChild(hud);
 
@@ -128,6 +139,10 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
   };
 
   const renderStats = () => {
+    if (modeStats) {
+      statsGroup.replaceChildren(...modeStats());
+      return;
+    }
     const eco = game.eco;
     const st = eco.stats;
     const has = st.length > 0;
@@ -250,5 +265,14 @@ export function createHud(ctx: UIContext, act: HudActions): Hud {
       renderLens();
     },
     tip: showTip,
+    setMode(t, s) {
+      modeTools.replaceChildren(...(t ? [t] : []));
+      modeTools.hidden = !t;
+      modeStats = s;
+      renderStats();
+    },
+    setAlertsTop(px) {
+      alerts.style.top = px > 0 ? `calc(${px}px + env(safe-area-inset-top, 0px))` : '';
+    },
   };
 }
