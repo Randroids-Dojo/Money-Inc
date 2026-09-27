@@ -334,8 +334,10 @@ export function underwrite(eco: Economy, bank: Bank, app: LoanApp): LoanDecision
     // development
     const saleValue = app.collateral.value * eco.market.hpi;
     const ltc = app.amount / Math.max(1, saleValue);
-    if (ltc > bank.maxLTV - 0.1) return { reason: `development leverage ${pct(ltc)} too high` };
-    pd = 0.02 + 0.4 * Math.max(0, ltc - 0.55) + 0.05 * Math.max(0, -eco.market.hpiExpect * 10);
+    // (Genesis Mode: when businesses are hiring and newcomers have nowhere to live, new homes let or sell at once)
+    const shortage = eco.genesis?.housingShortage ? 0.17 : 0;
+    if (ltc > bank.maxLTV - 0.1 + shortage) return { reason: `development leverage ${pct(ltc)} too high` };
+    pd = 0.02 + 0.4 * Math.max(0, ltc - 0.55 - shortage) + 0.05 * Math.max(0, -eco.market.hpiExpect * 10);
     lgd = 0.35;
   }
 
@@ -348,7 +350,9 @@ export function underwrite(eco: Economy, bank: Bank, app: LoanApp): LoanDecision
   const minRatio = eco.policy.capitalRequirement + pers.capitalBuffer * (0.25 + 0.9 * fear);
   if (m.equity / (m.rwa + addRWA) < minRatio) return { reason: `${bank.short} is short of capital` };
   const liqNeed = eco.policy.liquidityRequirement + pers.liquidityBuffer * 0.3;
-  if ((m.liquid - 0.5 * app.amount) / Math.max(1, m.deposits + 0.5 * app.amount) < liqNeed && app.purpose !== 'working_capital')
+  // (Genesis Mode: what banks across the river would still lend it counts as a source of cash)
+  const lines = eco.genesis ? eco.genesis.regionCredit(bank) : 0;
+  if ((m.liquid + lines - 0.5 * app.amount) / Math.max(1, m.deposits + 0.5 * app.amount) < liqNeed && app.purpose !== 'working_capital')
     return { reason: `${bank.short} is short of liquidity` };
   if (bank.originatedThisMonth + app.amount > bank.budget && app.purpose !== 'working_capital')
     return { reason: `${bank.short} has used up this month's lending budget` };
@@ -381,6 +385,25 @@ export function shopForLoan(eco: Economy, app: LoanApp, maxRate = Infinity): Loa
   return { reason: firstReason ?? 'no bank would lend' };
 }
 
+export interface LoanRequestOpts {
+  /** highest rate the borrower will accept */
+  maxRate?: number;
+  /** Genesis Mode: this kind of application may go to the player's desk */
+  review?: 'startup' | 'expansion' | 'mortgage' | 'development';
+  /** extra detail for the reviewer (plan, home, development) */
+  context?: Record<string, unknown>;
+}
+
+/**
+ * Ask for credit and carry on with the answer. In the standard game this is exactly
+ * shopForLoan followed by `done`; in Genesis Mode the application may wait on the player's desk,
+ * in which case `done` runs later with the final terms (the app passed back may be resized).
+ */
+export function requestLoan(eco: Economy, app: LoanApp, opts: LoanRequestOpts, done: (d: LoanDecision, app: LoanApp) => void): void {
+  if (eco.genesis && opts.review && eco.genesis.reviewLoan(app, opts, done)) return;
+  done(shopForLoan(eco, app, opts.maxRate), app);
+}
+
 /** Create a loan: the bank gains a loan asset, the borrower gains a brand-new deposit. */
 export function originate(eco: Economy, offer: LoanOffer, app: LoanApp): Loan {
   const b = offer.bank;
@@ -396,7 +419,8 @@ export function originate(eco: Economy, offer: LoanOffer, app: LoanApp): Loan {
     app.termMonths,
     app.amortizing,
     eco.day,
-    (eco.dom + 1) % DAYS_PER_MONTH,
+    // (Genesis Mode: the first payment falls due a month after the loan is made)
+    eco.genesis ? eco.dom : (eco.dom + 1) % DAYS_PER_MONTH,
     app.collateral,
   );
   eco.loans.set(loan.id, loan);
@@ -416,6 +440,7 @@ export function originate(eco: Economy, offer: LoanOffer, app: LoanApp): Loan {
     'good',
   );
   eco.event('loan_approved', app.borrower.id, app.amount, b.id, app.what);
+  eco.genesis?.onOriginate(loan, app);
   return loan;
 }
 
@@ -475,6 +500,7 @@ function serviceLoan(eco: Economy, l: Loan): void {
   l.note(eco.day, `Missed payment (${l.missed} in a row)`, due, borrower.id, 'bad');
   if (borrower.kind === 'household') borrower.note(eco.day, `Missed a ${l.kind} payment`, 'bad');
   else borrower.note(eco.day, `Missed a loan payment to ${eco.nameOf(l.servicerId)}`, 'bad');
+  eco.genesis?.onMissed(l);
   if (l.missed >= 4) defaultLoan(eco, l);
 }
 
@@ -657,6 +683,7 @@ function closeRepaid(eco: Economy, l: Loan, borrower: Household | Firm): void {
   }
   releaseFromBank(eco, l);
   if (l.holder.kind === 'pool') eco.pools.get(l.holder.id)?.recompute();
+  eco.genesis?.onLoanClosed(l);
 }
 
 /** Early payoff (e.g. when a mortgaged home is sold). Returns amount paid. */
@@ -711,6 +738,7 @@ export function settleShortSale(eco: Economy, l: Loan, seller: Household | Firm)
   eco.monthCounters.defaults++;
   eco.monthCounters.defaultValue += loss;
   eco.event('default', seller.id, loss, l.holder.kind === 'bank' ? l.holder.id : eco.fund.id);
+  eco.genesis?.onDefault(l, loss, loss, []);
 }
 
 // ============================================================================ defaults
@@ -812,6 +840,7 @@ export function defaultLoan(eco: Economy, l: Loan): void {
       closeFirm(eco, borrower, `defaulted on its ${fmtMoney(bal)} loan`);
     }
   }
+  eco.genesis?.onDefault(l, bal, loss, seizedUnits);
 }
 
 /** A bank takes ownership of a foreclosed unit as REO at a carrying value. */
@@ -937,6 +966,8 @@ export function monthlyInterest(eco: Economy): void {
         const lender = eco.bank(w.lenderId)!;
         eco.ledger.interbank(b, lender, i, 'interest');
         lender.pl.interestIncome += i;
+      } else if (w.lenderKind === 'region') {
+        eco.ledger.bankToOutside(b, i, 'interest', eco.world.id);
       } else {
         eco.ledger.bankPay(b, eco.fund.acct, i, 'interest');
         eco.fund.incomeMonth += i;
@@ -975,6 +1006,9 @@ export function monthlyInterest(eco: Economy): void {
         v.m.revenue += per;
         v.m.units += per / Math.max(0.2, v.price);
       }
+    } else if (eco.genesis) {
+      // Genesis Mode: no local firm to buy from yet, so the bank's costs are paid across the river
+      eco.ledger.bankToOutside(b, opex, 'expense', eco.world.id);
     }
     // deposit insurance premium
     const prem = (b.deposits * CFG.depositInsurancePremium) / 12;
@@ -1024,7 +1058,10 @@ function clamp01(x: number): number {
 /** Depositors flee banks they believe are in trouble. */
 function runsDaily(eco: Economy): void {
   const banks = eco.aliveBanks();
-  if (banks.length < 2) return;
+  if (banks.length < 2) {
+    eco.genesis?.flightDaily();
+    return;
+  }
   const safest = banks.reduce((a, b) => (b.stress < a.stress ? b : a));
   const limit = INSURANCE_LIMITS[eco.policy.depositInsurance];
   for (const b of banks) {
@@ -1073,16 +1110,16 @@ function wholesaleMaturities(eco: Economy): void {
     if (!b.alive) continue;
     const matured = b.wholesale.filter((w) => w.maturity <= eco.day);
     for (const w of matured) {
-      const lenderFear = w.lenderKind === 'fund' ? eco.fund.fear : eco.bank(w.lenderId)?.fear ?? 1;
+      const lenderFear = w.lenderKind === 'fund' ? eco.fund.fear : w.lenderKind === 'region' ? 0.2 : eco.bank(w.lenderId)?.fear ?? 1;
       const trust = b.stress < 0.35 - 0.2 * lenderFear && eco.market.interbankStress < 0.6;
-      const lenderOk = w.lenderKind === 'fund' ? eco.fund.acct.balance >= 0 : eco.bank(w.lenderId)?.alive;
+      const lenderOk = w.lenderKind === 'fund' ? eco.fund.acct.balance >= 0 : w.lenderKind === 'region' ? true : eco.bank(w.lenderId)?.alive;
       if (trust && lenderOk && b.personality.wholesale > 0.1) {
         w.maturity = eco.day + 30;
         w.rate = eco.market.interbankRate + 0.01 * b.stress + 0.003;
         continue;
       }
       repayWholesale(eco, b, w);
-      if (!trust) b.log(eco.day, `${w.lenderKind === 'fund' ? eco.fund.name : eco.nameOf(w.lenderId)} refused to roll over ${fmtMoney(w.amount)} of funding`, 'bad');
+      if (!trust) b.log(eco.day, `${w.lenderKind === 'fund' ? eco.fund.name : w.lenderKind === 'region' ? 'Banks across the river' : eco.nameOf(w.lenderId)} refused to roll over ${fmtMoney(w.amount)} of funding`, 'bad');
     }
   }
 }
@@ -1095,6 +1132,8 @@ function repayWholesale(eco: Economy, b: Bank, w: Wholesale): void {
       lender.interbankLent = lender.interbankLent.filter((x) => x !== w);
       invalidateMetrics(lender);
     }
+  } else if (w.lenderKind === 'region') {
+    eco.ledger.bankToOutside(b, w.amount, 'settle', eco.world.id);
   } else {
     eco.ledger.bankPay(b, eco.fund.acct, w.amount, 'assetsale');
     eco.fund.repos = eco.fund.repos.filter((x) => x !== w);
@@ -1133,8 +1172,27 @@ export function borrowWholesale(eco: Economy, b: Bank, amount: number, days: num
       got += amt;
     }
   }
+  if (got < amount && eco.genesis) got += borrowFromRegion(eco, b, amount - got, days, rate);
   if (got > 0) invalidateMetrics(b);
   return got;
+}
+
+/**
+ * Genesis Mode: banks across the river lend reserves to a town bank they trust, up to about
+ * twice its capital, at a premium. They stop rolling it over when the bank looks shaky.
+ */
+function borrowFromRegion(eco: Economy, b: Bank, amount: number, days: number, rate: number): number {
+  const m = cachedMetrics(eco, b);
+  if (m.equity <= 0 || b.stress > 0.3 || m.capitalRatio < eco.policy.capitalRequirement + 0.02) return 0;
+  let owed = 0;
+  for (const w of b.wholesale) if (w.lenderKind === 'region') owed += w.amount;
+  const amt = Math.min(amount, Math.max(0, 2 * m.equity - owed));
+  if (amt < 5_000) return 0;
+  const w: Wholesale = { id: eco.newId(), lenderId: eco.world.id, lenderKind: 'region', borrowerId: b.id, amount: amt, rate: rate + 0.01, maturity: eco.day + days, started: eco.day };
+  eco.ledger.outsideToBank(b, amt, 'settle', eco.world.id);
+  b.wholesale.push(w);
+  b.log(eco.day, `Borrowed ${fmtMoney(amt)} from banks across the river`, 'neutral');
+  return amt;
 }
 
 function fundNavValue(eco: Economy): number {
@@ -1143,7 +1201,7 @@ function fundNavValue(eco: Economy): number {
 
 /** Central bank lending facility, limited by eligible collateral. */
 export function borrowFromCB(eco: Economy, b: Bank, amount: number): number {
-  const mode = eco.policy.emergencyLiquidity;
+  const mode = eco.genesis?.elaFor(b) ?? eco.policy.emergencyLiquidity;
   if (mode === 'none') return 0;
   const bp = bondPrice(b.bondCoupon, eco.market.bondYield);
   const securities = b.bills * 0.99 + b.bondPar * bp * 0.95;
@@ -1295,6 +1353,7 @@ function expectedPoolPrice(eco: Economy, b: Bank): number {
 
 /** Package performing mortgages into an MBS pool and sell it to investors. */
 export function securitize(eco: Economy, b: Bank, target: number): number {
+  if (eco.genesis && !eco.genesis.canSecuritize()) return 0;
   const f = eco.fund;
   const fundBid = Math.max(0, f.acct.balance - 0.04 * fundNavValue(eco)) * (1 - f.fear) * 0.8;
   // other banks with an MBS appetite
@@ -1346,6 +1405,7 @@ export function securitize(eco: Economy, b: Bank, target: number): number {
   b.mbs.set(pool.id, { frac: keep, bookRatio: price });
   let sold = keep;
   const buyers: string[] = [];
+  const buyerIds: { id: number; kind: 'bank' | 'fund' }[] = [];
   // fund takes as much as it wants
   const fundFrac = Math.min(1 - sold, fundBid / (bal * price));
   if (fundFrac > 0.01) {
@@ -1353,6 +1413,7 @@ export function securitize(eco: Economy, b: Bank, target: number): number {
     f.mbs.set(pool.id, { frac: fundFrac, bookRatio: price });
     sold += fundFrac;
     buyers.push(`${f.name} ${pct(fundFrac, 0)}`);
+    buyerIds.push({ id: f.id, kind: 'fund' });
   }
   for (const bb of bankBuyers) {
     if (sold >= 0.999) break;
@@ -1362,6 +1423,7 @@ export function securitize(eco: Economy, b: Bank, target: number): number {
     bb.bank.mbs.set(pool.id, { frac: fr, bookRatio: price });
     sold += fr;
     buyers.push(`${bb.bank.short} ${pct(fr, 0)}`);
+    buyerIds.push({ id: bb.bank.id, kind: 'bank' });
     invalidateMetrics(bb.bank);
   }
   if (sold < 0.999) {
@@ -1379,6 +1441,7 @@ export function securitize(eco: Economy, b: Bank, target: number): number {
   b.log(eco.day, `Securitised ${fmtMoney(bal)} of mortgages as ${pool.name}${gain > 1000 ? `, booking a ${fmtMoney(gain)} gain` : ''}`, 'neutral');
   eco.headline(`${b.name} packages ${chosen.length} mortgages (${fmtMoney(bal)}) into ${pool.name} and sells them to investors`, 'neutral', b.id, undefined, `sec-${b.id}`, 25);
   eco.event('securitization', b.id, bal, f.id, pool.name);
+  eco.genesis?.onSecuritize(b, pool, chosen, buyerIds);
   return bal;
 }
 
@@ -1416,6 +1479,7 @@ export function sellLoans(eco: Economy, b: Bank, target: number): number {
   b.log(eco.day, `Sold ${fmtMoney(sold)} of loans to ${f.name}${loss > 1000 ? ` at a ${fmtMoney(loss)} loss` : ''}`, 'neutral');
   eco.headline(`${b.name} sells ${fmtMoney(sold)} of business loans to ${f.name}`, 'neutral', b.id, undefined, `ls-${b.id}`, 40);
   eco.event('loan_sale', b.id, sold, f.id);
+  eco.genesis?.onLoansSold(b, chosen);
   return sold;
 }
 
@@ -1534,6 +1598,8 @@ export function bankMonthly(eco: Economy, b: Bank): void {
   const profit = netIncome(b.pl);
   let capShort = m.capitalRatio < capTarget;
   let liqShort = m.liquidityRatio < liqTarget;
+  // Genesis Mode: while the player is in charge of it, the bank does not re-engineer its own balance sheet
+  const auto = !eco.genesis || eco.genesis.autoEngineering(b, capShort, liqShort);
 
   if (capShort) {
     if (!b.dividendsSuspended) {
@@ -1541,7 +1607,7 @@ export function bankMonthly(eco: Economy, b: Bank): void {
       b.log(eco.day, `Suspended dividends to rebuild capital`, 'bad');
     }
     const neededRWA = m.rwa - m.equity / capTarget; // RWA to shed
-    if (neededRWA > 0) {
+    if (neededRWA > 0 && auto) {
       let freed = 0;
       if (pers.securitize > 0.2 && eco.rng.chance(0.3 + 0.7 * pers.securitize)) {
         freed += securitize(eco, b, (neededRWA / RISK_WEIGHTS.mortgage) * 1.2) * RISK_WEIGHTS.mortgage;
@@ -1557,7 +1623,7 @@ export function bankMonthly(eco: Economy, b: Bank): void {
   }
 
   // securitisation as a growth strategy: free capacity to keep originating
-  if (!capShort && pers.securitize > 0.5 && b.fear < 0.45 && m.mortgages > 300_000) {
+  if (auto && !capShort && pers.securitize > 0.5 && b.fear < 0.45 && m.mortgages > 300_000) {
     const nearLimit = m.capitalRatio < capTarget + 0.02;
     // when investors pay a premium, selling loans books an immediate "gain on sale"
     const px = expectedPoolPrice(eco, b);
@@ -1579,10 +1645,13 @@ export function bankMonthly(eco: Economy, b: Bank): void {
     const ceiling = Math.max(policyRate(eco) * pers.depositBeta, Math.min(policyRate(eco) + 0.01, loanYield - 0.028));
     b.depositRate = Math.min(ceiling, b.depositRate + 0.0025);
     let got = 0;
-    if (pers.wholesale > 0.2) got += borrowWholesale(eco, b, gap * pers.wholesale, 30);
-    if (got < gap && pers.wholesale > 0.3) got += issueBonds(eco, b, (gap - got) * 0.5);
-    if (got < gap && m.mbs > 0) got += sellMbs(eco, b, (gap - got) * 0.5);
-    if (got < gap && pers.securitize > 0.3) got += securitize(eco, b, gap - got);
+    if (auto) {
+      // (Genesis Mode: a town bank's natural source of cash is its line with banks across the river)
+      if (pers.wholesale > 0.2) got += borrowWholesale(eco, b, gap * (eco.genesis ? 1 : pers.wholesale), 30);
+      if (got < gap && pers.wholesale > 0.3) got += issueBonds(eco, b, (gap - got) * 0.5);
+      if (got < gap && m.mbs > 0) got += sellMbs(eco, b, (gap - got) * 0.5);
+      if (got < gap && pers.securitize > 0.3) got += securitize(eco, b, gap - got);
+    }
     if (got < gap * 0.5) {
       // buy bills with whatever surplus exists later; tighten meanwhile
     }
@@ -1624,6 +1693,8 @@ export function bankMonthly(eco: Economy, b: Bank): void {
   let budget = Math.min(growthBudget * (1.4 - b.fear), capBudget * 1.6);
   if (b.stance === 'frozen') budget = 0;
   else if (b.stance === 'tightening') budget *= 0.4;
+  // (Genesis Mode: in a small town lending is lumpy: one house or one business can be a month's lending)
+  if (eco.genesis && b.stance !== 'frozen') budget = Math.max(budget, Math.min(capBudget * 1.6, b.stance === 'tightening' ? 80_000 : 250_000));
   b.budget = Math.max(0, budget);
   b.originatedThisMonth = 0;
   b.deniedThisMonth = 0;
@@ -1644,14 +1715,21 @@ export function bankMonthly(eco: Economy, b: Bank): void {
 
   // ---------- dividends
   if (!b.dividendsSuspended && profit > 0 && m.capitalRatio > capTarget + 0.005) {
-    let div = profit * pers.payout;
-    // capital well beyond what the bank needs is handed back to its shareholders
-    const excess = m.equity - (capTarget + 0.05) * m.rwa;
-    if (excess > 0 && b.fear < 0.5) div += excess * 0.15;
-    eco.ledger.bankPay(b, eco.fund.acct, div, 'dividend');
-    eco.fund.incomeMonth += div;
-    b.retained -= div;
-    b.pl.dividends += div;
+    if (eco.genesis) {
+      // Genesis Mode: a young bank pays out a share of profits to its owners across the river
+      const paid = eco.genesis.bankDividend(b, profit * pers.payout);
+      b.retained -= paid;
+      b.pl.dividends += paid;
+    } else {
+      let div = profit * pers.payout;
+      // capital well beyond what the bank needs is handed back to its shareholders
+      const excess = m.equity - (capTarget + 0.05) * m.rwa;
+      if (excess > 0 && b.fear < 0.5) div += excess * 0.15;
+      eco.ledger.bankPay(b, eco.fund.acct, div, 'dividend');
+      eco.fund.incomeMonth += div;
+      b.retained -= div;
+      b.pl.dividends += div;
+    }
   }
 
   // ---------- close the books for the month
@@ -1674,6 +1752,7 @@ export function bankMonthly(eco: Economy, b: Bank): void {
     fear: b.fear,
   });
   if (b.history.length > 600) b.history.shift();
+  eco.genesis?.afterBankMonthly(b);
   invalidateMetrics(b);
 }
 
@@ -1692,7 +1771,7 @@ export function setStandards(eco: Economy, b: Bank): void {
   b.spreads.business = (0.027 + 0.006 * (1 - ra) + 0.035 * f) * tilt(pers.focus.business);
   b.spreads.consumer = (0.05 + 0.01 * (1 - ra) + 0.05 * f) * tilt(pers.focus.consumer);
   b.spreads.development = (0.028 + 0.005 * (1 - ra) + 0.04 * f) * tilt(pers.focus.mortgage);
-  void eco;
+  eco.genesis?.applyStandards(b);
 }
 
 /** Retained earnings are booked from the P&L at month end; dividends are part of the P&L record. */
@@ -1771,6 +1850,8 @@ export function buyGovtSecurities(eco: Economy, b: Bank, amount: number): void {
 
 /** Cash balance the Treasury likes to hold at the central bank. */
 export function treasuryTarget(eco: Economy): number {
+  // Genesis Mode: the young town's council does not borrow, so it issues no bills
+  if (eco.genesis) return 0;
   return Math.max(150_000, eco.population() * 1500) * 2;
 }
 

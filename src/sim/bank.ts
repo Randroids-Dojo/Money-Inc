@@ -60,7 +60,8 @@ export function netIncome(p: PL): number {
 export interface Wholesale {
   id: number;
   lenderId: number;
-  lenderKind: 'bank' | 'fund';
+  /** region: banks across the river (Genesis Mode) */
+  lenderKind: 'bank' | 'fund' | 'region';
   borrowerId: number;
   amount: number;
   rate: number;

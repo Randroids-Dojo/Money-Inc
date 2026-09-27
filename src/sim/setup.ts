@@ -18,8 +18,9 @@ import { firmColor } from './firms';
 import { bankStaffTarget, publicStaffTarget, pickFavourites } from './markets';
 import { metrics, setStandards } from './banking';
 import { fundBreakdown } from './fund';
+import { createGenesisEconomy } from './genesis/setup';
 
-export type Scenario = 'classic' | 'easy' | 'fragile' | 'tight';
+export type Scenario = 'classic' | 'easy' | 'fragile' | 'tight' | 'genesis';
 
 export interface GameOptions {
   seed: number;
@@ -32,6 +33,10 @@ export const SCENARIOS: Record<Scenario, { title: string; blurb: string }> = {
   easy: { title: 'Easy Money', blurb: 'Cheap credit, thin capital rules and hungry banks. How long can the party last?' },
   fragile: { title: 'No Safety Net', blurb: 'No deposit insurance and no lender of last resort. Bank runs are real.' },
   tight: { title: 'Prudent Regime', blurb: 'High capital and liquidity requirements. Safer banks — but slower growth?' },
+  genesis: {
+    title: 'Genesis',
+    blurb: 'One bank, one would-be business, one worker — and not a dollar of bank money. Make the first loan and grow an economy you can trace back to it.',
+  },
 };
 
 export function defaultPolicy(s: Scenario = 'classic'): PolicySettings {
@@ -164,6 +169,7 @@ const FIRM_PLAN: { sector: Sector; subtype: string; big: boolean; workers: numbe
 ];
 
 export function createEconomy(opts: GameOptions): Economy {
+  if (opts.scenario === 'genesis') return createGenesisEconomy(opts.seed, defaultPolicy('classic'));
   const city = generateCity(opts.seed);
   const policy = defaultPolicy(opts.scenario);
   const eco = new Economy(opts.seed, city, policy);

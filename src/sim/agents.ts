@@ -57,6 +57,11 @@ export class Household {
   retired = false;
   /** day before which a newly jobless person is still searching (cannot start a new job yet) */
   searchUntil = 0;
+  /** Genesis Mode: an offer on a home is waiting for a mortgage decision */
+  buyPending = false;
+  /** Genesis Mode: came to town for a job before there was a home for them; boards with a family */
+  lodging = false;
+  lodgingSince = -1;
 
   constructor(
     public readonly id: number,
@@ -327,6 +332,8 @@ export interface UnitListing {
   distressed: boolean;
   /** lowest price the seller will accept */
   floor?: number;
+  /** Genesis Mode: under offer while the buyer's mortgage is decided */
+  pending?: number;
 }
 
 export class Unit {
@@ -349,7 +356,8 @@ export class Unit {
   ) {}
 }
 
-export type ProjectKind = 'expansion' | 'startup' | 'housing' | 'refit';
+/** housing: a developer builds homes to sell; homes: a contractor builds homes a client keeps and lets (Genesis Mode) */
+export type ProjectKind = 'expansion' | 'startup' | 'housing' | 'refit' | 'homes';
 
 export class Project {
   progress = 0;

@@ -667,7 +667,7 @@ export class Renderer {
         }
         const top = [...byLot.values()].sort((a, c) => c.bal - a.bal).slice(0, 30);
         for (const e of top) add(e.borrower, b.id, statusColor(e.worst, b.color), e.bal > 150_000 ? 2 : 1, 1);
-        for (const w of b.wholesale) add(w.lenderKind === 'bank' ? w.lenderId : eco.fund.id, b.id, '#f4f4f4', 1, 1);
+        for (const w of b.wholesale) if (w.lenderKind !== 'region') add(w.lenderKind === 'bank' ? w.lenderId : eco.fund.id, b.id, '#f4f4f4', 1, 1);
         if (b.cbLoan > 0) add(eco.cb.id, b.id, '#ffffff', 2, 1);
         break;
       }

@@ -374,6 +374,10 @@ export function expectedAppreciation(eco: Economy, speculator: number): number {
 // ============================================================================ migration
 
 export function migrationMonthly(eco: Economy): void {
+  if (eco.genesis) {
+    eco.genesis.migration();
+    return;
+  }
   let vac = 0,
     unemployed = 0;
   for (const f of eco.firms) if (f.status !== 'closed') vac += Math.max(0, f.vacancies);
@@ -455,7 +459,11 @@ export function departHousehold(eco: Economy, h: Household, reason: string): voi
     if (!u.listing) listUnit(eco, u, h.id, marketAsk(eco, u) * 0.9, true);
   }
   h.lookingToBuy = null;
-  if (h.acct.balance > 0) eco.ledger.transfer(h.acct, eco.world.acct, h.acct.balance, 'transfer');
+  if (h.acct.balance > 0) {
+    // Genesis Mode: their savings leave the town's banks with them
+    if (eco.genesis) eco.ledger.toOutside(h.acct, h.acct.balance, 'migrate', eco.world.id);
+    else eco.ledger.transfer(h.acct, eco.world.acct, h.acct.balance, 'transfer');
+  }
   h.departed = true;
   h.note(eco.day, `Left town: ${reason}`, 'bad');
   eco.event('departure', h.id, undefined, undefined, reason);

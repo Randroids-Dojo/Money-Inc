@@ -5,7 +5,7 @@ import { CFG } from './config';
 import type { Economy } from './economy';
 import type { Household, Unit } from './agents';
 import type { Account } from './ledger';
-import { originate, payoffLoan, releaseFromBank, settleShortSale, shopForLoan, unitValue, invalidateMetrics, type LoanApp } from './banking';
+import { originate, payoffLoan, releaseFromBank, settleShortSale, requestLoan, unitValue, invalidateMetrics, type LoanApp } from './banking';
 import { fmtMoney, pct } from './format';
 import { departHousehold } from './households';
 import { fundCashTarget } from './fund';
@@ -30,8 +30,12 @@ function rentable(eco: Economy, u: Unit): boolean {
   if (!owner) return false;
   if (owner.kind === 'household') return !owner.departed;
   if (owner.kind === 'fund') return !u.listing;
+  // (Genesis Mode: in a town short of homes, unsold new homes and repossessed ones are let while they wait for a
+  // buyer, and employers let the cottages they built for their workers)
+  if (eco.genesis && owner.kind === 'bank') return !!u.listing && eco.day - u.listing.since > 45;
+  if (eco.genesis && owner.kind === 'firm' && !u.listing) return owner.status !== 'closed';
   // banks let tenants stay but do not sign new leases; builders may rent unsold stock
-  return owner.kind === 'firm' && eco.day - (u.listing?.since ?? eco.day) > 120;
+  return owner.kind === 'firm' && eco.day - (u.listing?.since ?? eco.day) > (eco.genesis ? 14 : 120);
 }
 
 export function vacantRentals(eco: Economy): Unit[] {
@@ -57,6 +61,7 @@ function moveIn(eco: Economy, h: Household, u: Unit): void {
   }
   u.occupantId = h.id;
   h.homeUnit = u.id;
+  h.lodging = false;
   if (u.rent <= 0) u.rent = u.baseRent * u.quality * eco.market.rentIndex;
   // regular shops are chosen near home
   h.favs.retail = [];
@@ -95,8 +100,8 @@ export function housingMarketWeek(eco: Economy): void {
     const floor = l.floor ?? l.price * 0.8;
     if (weeks > 3 && l.price > floor) l.price = Math.max(floor, l.price * (eager ? 0.985 : 0.992));
   }
-  const listed = eco.units.filter((u) => u.listing && !u.building);
-  const buyers = eco.households.filter((h) => !h.departed && h.lookingToBuy);
+  const listed = eco.units.filter((u) => u.listing && !u.building && u.listing.pending === undefined);
+  const buyers = eco.households.filter((h) => !h.departed && h.lookingToBuy && !h.buyPending);
   if (!listed.length || !buyers.length) {
     return;
   }
@@ -108,7 +113,7 @@ export function housingMarketWeek(eco: Economy): void {
       (u) =>
         u.listing!.price <= h.buyBudget &&
         u.listing!.seller !== h.id &&
-        (!home || u.occupantId < 0 || u.occupantId === u.listing!.seller),
+        (!home || u.occupantId < 0 || u.occupantId === u.listing!.seller || (!!eco.genesis && u.occupantId === h.id)),
     );
     if (!cands.length) continue;
     const pick = cands.reduce((a, b) => {
@@ -131,6 +136,8 @@ export function housingMarketWeek(eco: Economy): void {
       const p = Math.min(price, w.buyBudget);
       if (p < u.listing.price * 0.98) continue;
       if (executeSale(eco, u, w, p)) break;
+      // Genesis Mode: an offer waiting on a mortgage decision takes the home off the market
+      if (!u.listing || u.listing.pending !== undefined) break;
       price = u.listing.price;
     }
   }
@@ -153,7 +160,6 @@ function executeSale(eco: Economy, u: Unit, h: Household, price: number): boolea
   let loanAmt = Math.max(0, price - cash * 0.95);
   loanAmt = Math.ceil(loanAmt / 1000) * 1000;
   if (h.acct.balance + loanAmt < price) return false;
-  let loanId = -1;
   if (loanAmt > 5000) {
     const income = h.employed ? h.wage : 0;
     const rentIncome = investment ? u.baseRent * u.quality * eco.market.rentIndex * 0.75 : 0;
@@ -170,18 +176,35 @@ function executeSale(eco: Economy, u: Unit, h: Household, price: number): boolea
       existingDebt: 0,
       what: `${investment ? 'buying an investment property' : 'buying a home'} (${fmtMoney(price)})`,
     };
-    const d = shopForLoan(eco, app);
-    if (!d.offer) {
-      h.note(eco.day, `Mortgage refused: ${d.reason}`, 'bad');
-      h.lookingToBuy = null;
-      eco.event('loan_denied', h.id, loanAmt, h.acct.bank.id, d.reason);
-      return false;
-    }
-    const loan = originate(eco, d.offer, app);
-    loanId = loan.id;
-    u.mortgage = loan;
-    loan.spend(seller.id, Math.min(price, loanAmt), 'property purchase');
+    let sold = false;
+    requestLoan(eco, app, { review: 'mortgage', context: { unit: u, price, sellerId: seller.id, investment } }, (d, fin) => {
+      if (!d.offer) {
+        h.note(eco.day, `Mortgage refused: ${d.reason}`, 'bad');
+        h.lookingToBuy = null;
+        eco.event('loan_denied', h.id, loanAmt, h.acct.bank.id, d.reason);
+        return;
+      }
+      // (in Genesis Mode the decision may come later: the home must still be for sale and affordable)
+      if (!u.listing || u.listing.seller !== seller.id || h.departed || h.acct.balance + fin.amount < price) return;
+      const loan = originate(eco, d.offer, fin);
+      u.mortgage = loan;
+      loan.spend(seller.id, Math.min(price, fin.amount), 'property purchase');
+      sold = completeSale(eco, u, h, seller, price, loan.id, investment);
+    });
+    return sold;
   }
+  return completeSale(eco, u, h, seller, price, -1, investment);
+}
+
+function completeSale(
+  eco: Economy,
+  u: Unit,
+  h: Household,
+  seller: NonNullable<ReturnType<Economy['agents']['get']>>,
+  price: number,
+  loanId: number,
+  investment: boolean,
+): boolean {
   if (h.acct.balance < price) {
     // should not happen, but never let a sale overdraw
     return false;
@@ -221,6 +244,7 @@ function executeSale(eco: Economy, u: Unit, h: Household, price: number): boolea
   eco.houseSaleRatios.push(price / (u.baseValue * u.quality));
   eco.monthCounters.houseSales++;
   eco.event('house_sold', h.id, price, seller.id);
+  eco.genesis?.onHouseSold(u, h, seller.id, price, loanId);
   return true;
 }
 
@@ -298,7 +322,7 @@ function fundBuysHomes(eco: Economy): void {
   const need = fundRequiredYield(eco);
   let bought = 0;
   const cands = eco.units
-    .filter((u) => u.listing && !u.building && u.listing.seller !== f.id)
+    .filter((u) => u.listing && !u.building && u.listing.seller !== f.id && u.listing.pending === undefined)
     .map((u) => ({ u, y: (u.baseRent * u.quality * eco.market.rentIndex * 12) / u.listing!.price }))
     .filter((c) => c.y >= need)
     .sort((a, b) => b.y - a.y);

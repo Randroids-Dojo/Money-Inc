@@ -6,10 +6,11 @@ import type { Economy } from './economy';
 import { Firm, newFirmMonth, type Household } from './agents';
 import type { Sector } from './types';
 import { buyGoods, firmProfit, fire } from './markets';
-import { originate, requestWorkingCapital, shopForLoan, defaultLoan, invalidateMetrics, releaseFromBank, type LoanApp } from './banking';
+import { originate, requestWorkingCapital, requestLoan, shopForLoan, defaultLoan, invalidateMetrics, releaseFromBank, type LoanApp } from './banking';
 import { smallJob, startProject } from './construction';
 import { fmtMoney, pct } from './format';
 import { firmName } from './names';
+import { regionWage } from './genesis/trade';
 
 // ============================================================================ daily
 
@@ -97,6 +98,7 @@ function paySalary(eco: Economy, f: Firm, h: Household): void {
   h.incomeThisMonth += paidNet;
   h.wagesThisMonth += paidNet + paidTax;
   f.m.wages += paidNet + paidTax;
+  eco.genesis?.onWage(f, h, paidNet + paidTax);
 }
 
 // ============================================================================ monthly review
@@ -159,6 +161,8 @@ function reviewFirm(eco: Economy, f: Firm): void {
   // ---- wages
   let gw = mk.inflationExpect + CFG.productivityGrowth + CFG.wageAdjust * (CFG.naturalUnemployment - mk.unemployment);
   if (f.hotMonths > 0 && f.vacancies > 0) gw += 0.015;
+  // (Genesis Mode: people can move between the town and the region, so local wages cannot drift far from the region's)
+  if (eco.genesis) gw += Math.max(-0.08, Math.min(0.08, 0.35 * Math.log(regionWage(eco) / Math.max(1, f.wage))));
   if (f.health === 'distressed') gw = Math.min(gw, mk.unemployment > 0.1 ? -0.06 : 0);
   gw = Math.max(-0.06, Math.min(0.2, gw));
   f.wage *= 1 + gw / 12;
@@ -281,6 +285,7 @@ function projectReserve(eco: Economy, f: Firm): number {
 // ============================================================================ investment
 
 function planExpansion(eco: Economy, f: Firm): void {
+  if (eco.genesis?.hasPendingLoan(f.id)) return;
   const sp = SECTORS[f.sector];
   const mk = eco.market;
   const capCap = f.capitalCap;
@@ -307,9 +312,15 @@ function planExpansion(eco: Economy, f: Firm): void {
   // pay cash if the firm can afford it outright, otherwise put in some equity and borrow
   const equity = spare >= cost ? cost : Math.min(spare, cost * 0.35);
   const borrow = cost - equity;
-  const newLevel = levelFor(f.sector, f.K + addK);
   const reason = `${f.name} was running at ${pct(Math.min(1.5, f.last.units / Math.max(1, capCap)), 0)} of capacity and turning customers away`;
-  let loanId = -1;
+  const launch = (loanId: number, k: number) => {
+    const c = cost * k;
+    const x = addK * k;
+    const p = startProject(eco, 'expansion', f.lotId, f.id, c, x * 0.5, x * 0.5, reason, { kind: 'firm', level: levelFor(f.sector, f.K + x) });
+    if (!p) return;
+    p.loanId = loanId;
+    f.project = p.id;
+  };
   if (borrow > 5000) {
     const cf = f.last.revenue - f.last.wages - f.last.inputs - f.last.maintenance;
     const app: LoanApp = {
@@ -326,27 +337,30 @@ function planExpansion(eco: Economy, f: Firm): void {
       existingDebt: f.debt(),
       what: `expanding ${f.name}`,
     };
-    const d = shopForLoan(eco, app, roi - CFG.expansionHurdle * 0.5);
-    if (!d.offer) {
-      f.denials++;
-      f.lastDenialReason = d.reason ?? '';
-      f.note(eco.day, `Expansion loan refused: ${d.reason}`, 'bad');
-      eco.event('loan_denied', f.id, app.amount, f.acct.bank.id, d.reason);
-      if (app.amount > 100_000) eco.headline(`${f.name} is turned down for a ${fmtMoney(app.amount)} expansion loan (${d.reason})`, 'bad', f.id, undefined, `deny-${f.id}`, 120);
-      // without credit, grow more slowly out of retained profits
-      if (spare > cost * 0.25) selfFundedExpansion(eco, f, spare * 0.9, unitPrice, reason);
-      return;
-    }
-    const loan = originate(eco, d.offer, app);
-    loanId = loan.id;
-    f.note(eco.day, `Borrowed ${fmtMoney(app.amount)} from ${d.offer.bank.name} to expand`, 'good', app.amount, d.offer.bank.id);
-    if (app.amount > 60_000)
-      eco.headline(`${d.offer.bank.name} lends ${fmtMoney(app.amount)} to ${f.name} to expand`, 'good', f.id, undefined, `exp-${f.id}`, 60);
+    const context = { expansion: { addK, unitPrice, cost, equity } };
+    requestLoan(eco, app, { maxRate: roi - CFG.expansionHurdle * 0.5, review: 'expansion', context }, (d, fin) => {
+      if (!d.offer) {
+        f.denials++;
+        f.lastDenialReason = d.reason ?? '';
+        f.note(eco.day, `Expansion loan refused: ${d.reason}`, 'bad');
+        eco.event('loan_denied', f.id, app.amount, f.acct.bank.id, d.reason);
+        if (app.amount > 100_000) eco.headline(`${f.name} is turned down for a ${fmtMoney(app.amount)} expansion loan (${d.reason})`, 'bad', f.id, undefined, `deny-${f.id}`, 120);
+        // without credit, grow more slowly out of retained profits
+        if (spare > cost * 0.25 && f.status === 'open' && f.project < 0) selfFundedExpansion(eco, f, spare * 0.9, unitPrice, reason);
+        return;
+      }
+      // (in Genesis Mode the decision may come days later: make sure the plan still makes sense)
+      if (f.status !== 'open' || f.project >= 0) return;
+      const loan = originate(eco, d.offer, fin);
+      f.note(eco.day, `Borrowed ${fmtMoney(fin.amount)} from ${d.offer.bank.name} to expand`, 'good', fin.amount, d.offer.bank.id);
+      if (fin.amount > 60_000)
+        eco.headline(`${d.offer.bank.name} lends ${fmtMoney(fin.amount)} to ${f.name} to expand`, 'good', f.id, undefined, `exp-${f.id}`, 60);
+      // a resized loan scales the project (the owner's own contribution stays the same)
+      launch(loan.id, fin.amount === app.amount ? 1 : (equity + fin.amount) / cost);
+    });
+    return;
   }
-  const p = startProject(eco, 'expansion', f.lotId, f.id, cost, addK * 0.5, addK * 0.5, reason, { kind: 'firm', level: newLevel });
-  if (!p) return;
-  p.loanId = loanId;
-  f.project = p.id;
+  launch(-1, 1);
 }
 
 function selfFundedExpansion(eco: Economy, f: Firm, budget: number, unitPrice: number, reason: string): void {
@@ -388,6 +402,7 @@ export function openFirm(eco: Economy, f: Firm): void {
   eco.event('firm_open', f.id);
   eco.monthCounters.firmOpenings++;
   eco.headline(`Grand opening: ${f.name}`, 'good', f.id, undefined, `open-${f.id}`, 0);
+  eco.genesis?.onFirmOpened(f);
 }
 
 export function closeFirm(eco: Economy, f: Firm, reason: string): void {
@@ -452,6 +467,7 @@ export function closeFirm(eco: Economy, f: Firm, reason: string): void {
     eco.monthCounters.firmClosures++;
     eco.headline(`${f.name} closes its doors: ${reason}`, 'bad', f.id, undefined, `close-${f.id}`, 0);
   }
+  eco.genesis?.onFirmClosed(f, reason);
 }
 
 // ============================================================================ entry
@@ -459,6 +475,7 @@ export function closeFirm(eco: Economy, f: Firm, reason: string): void {
 const ENTRY_SECTORS: Sector[] = ['retail', 'service', 'factory', 'builder'];
 
 export function entryMonthly(eco: Economy): void {
+  if (eco.genesis) return; // Genesis Mode drafts its own business plans
   const mk = eco.market;
   for (const s of ENTRY_SECTORS) {
     if (eco.day - (eco.lastEntry[s] ?? -9999) < 90) continue;

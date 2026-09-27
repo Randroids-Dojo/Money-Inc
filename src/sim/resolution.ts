@@ -15,7 +15,14 @@ import { MAX_ORIGINS, FIRST_BANK_ORIGIN } from './ledger';
 
 export function failBank(eco: Economy, b: Bank, kind: 'insolvency' | 'liquidity'): void {
   if (!b.alive) return;
-  const others = eco.aliveBanks().filter((x) => x !== b);
+  // Genesis Mode: a failing bank is a decision for the player, not an automatic closure
+  if (eco.genesis && eco.genesis.interceptFailure(b, kind)) return;
+  let others = eco.aliveBanks().filter((x) => x !== b);
+  if (!others.length && eco.genesis) {
+    // no plot armour: the last bank can fail too, and a bridge bank takes over its book
+    const bridge = eco.genesis.charterBridgeBank(b);
+    if (bridge) others = [bridge];
+  }
   if (!others.length) {
     rescueLastBank(eco, b, kind);
     return;
@@ -98,7 +105,9 @@ export function failBank(eco: Economy, b: Bank, kind: 'insolvency' | 'liquidity'
   if (E > 1) {
     // a solvent bank killed by a run: its shareholders are paid for the equity left
     const price = E * 0.8;
-    eco.ledger.bankPay(acq, eco.fund.acct, price, 'capital');
+    // (Genesis Mode: the town's banks are owned by investors across the river)
+    if (eco.genesis) eco.ledger.bankToOutside(acq, price, 'capital', eco.world.id);
+    else eco.ledger.bankPay(acq, eco.fund.acct, price, 'capital');
     acq.retained -= price;
   }
   // --- 5. shock
@@ -132,11 +141,12 @@ export function failBank(eco: Economy, b: Bank, kind: 'insolvency' | 'liquidity'
   eco.headline(`${b.name} has FAILED: ${why}. ${acq.name} takes over its accounts and loans. ${cover}`, 'alert', b.id, undefined, `fail-${b.id}`, 0);
   eco.event('bank_fail', b.id, m0.assets, acq.id, kind);
   acq.log(eco.day, `Took over ${b.name}'s deposits and loans after it failed`, 'neutral');
+  eco.genesis?.onBankFailed(b, acq);
   invalidateMetrics(b);
   invalidateMetrics(acq);
 }
 
-function settleWholesale(eco: Economy, b: Bank): void {
+export function settleWholesale(eco: Economy, b: Bank): void {
   const total = b.wholesale.reduce((x, w) => x + w.amount, 0);
   if (total <= 0) return;
   const need = total - Math.max(0, b.reserves);
@@ -153,6 +163,8 @@ function settleWholesale(eco: Economy, b: Bank): void {
         eco.ledger.interbank(b, lender, w.amount, 'resolution');
         lender.interbankLent = lender.interbankLent.filter((x) => x !== w);
       }
+    } else if (w.lenderKind === 'region') {
+      eco.ledger.bankToOutside(b, w.amount, 'resolution', eco.world.id);
     } else {
       eco.ledger.bankPay(b, eco.fund.acct, w.amount, 'resolution');
       eco.fund.repos = eco.fund.repos.filter((x) => x !== w);
@@ -175,7 +187,7 @@ function writeDownDeposit(eco: Economy, a: ReturnType<typeof allAccounts>[number
 }
 
 /** Move a failed bank's entire book to the acquirer. */
-function transferBook(eco: Economy, b: Bank, acq: Bank): void {
+export function transferBook(eco: Economy, b: Bank, acq: Bank): void {
   const mB = metrics(eco, b);
   const unrealizedB = mB.unrealized;
   const carriedEquity = b.paidIn + b.retained + netIncome(b.pl);
@@ -303,6 +315,7 @@ const PERSONALITIES: BankPersonality[] = [
 ];
 
 export function charterMonthly(eco: Economy): void {
+  if (eco.genesis) return; // Genesis Mode: charters are applications the player decides
   const alive = eco.aliveBanks();
   if (alive.length >= eco.initialBankCount) return;
   if (eco.day - eco.lastFailureDay < DAYS_PER_MONTH * 18 || eco.day - eco.lastCharterDay < DAYS_PER_MONTH * 12) return;

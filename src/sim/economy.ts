@@ -1,7 +1,7 @@
 // The Economy owns all simulation state and advances it one day at a time.
 
 import { CFG, DAYS_PER_MONTH } from './config';
-import { Account, FIRST_BANK_ORIGIN, Ledger, type LedgerHost } from './ledger';
+import { Account, FIRST_BANK_ORIGIN, Ledger, type LedgerHost, type MoneySink } from './ledger';
 import { Rng } from './rng';
 import type { Bank } from './bank';
 import {
@@ -18,6 +18,7 @@ import {
 } from './agents';
 import type { Loan } from './loan';
 import type { City } from '../world/city';
+import type { Genesis } from './genesis/state';
 import type { FlowEvent, FlowKind, NewsItem, NewsTone, PolicySettings, SimEvent, SimEventType } from './types';
 import { Stats } from './stats';
 import { News } from './news';
@@ -78,6 +79,8 @@ export interface MoneyFlows {
   assetSales: number; // non-banks buying assets from banks (destroyed)
   writeDowns: number; // deposits lost in bank failures (destroyed)
   settlement: number; // gross interbank settlement
+  tradeIn: number; // Genesis Mode: money arriving from outside town (created here)
+  tradeOut: number; // Genesis Mode: money leaving town (destroyed here)
 }
 
 export function newMoneyFlows(): MoneyFlows {
@@ -91,6 +94,8 @@ export function newMoneyFlows(): MoneyFlows {
     assetSales: 0,
     writeDowns: 0,
     settlement: 0,
+    tradeIn: 0,
+    tradeOut: 0,
   };
 }
 
@@ -172,6 +177,8 @@ export class Economy implements LedgerHost {
   initialBankCount = 4;
   /** invariant checking in development/test runs */
   checkInvariants = false;
+  /** Genesis Mode state; undefined in the standard game, where every Genesis hook is a no-op */
+  genesis?: Genesis;
 
   constructor(
     seed: number,
@@ -300,16 +307,20 @@ export class Economy implements LedgerHost {
   recordCreation(amount: number, kind: FlowKind, _origin: number): void {
     const f = this.flowsMonth;
     if (kind === 'loan') f.lending += amount;
+    else if (kind === 'export' || kind === 'migrate' || kind === 'flight') f.tradeIn += amount;
     else if (_origin >= FIRST_BANK_ORIGIN) f.bankSpending += amount;
     else f.publicOut += amount;
+    this.genesis?.onCreated(amount, kind, _origin);
   }
 
-  recordDestruction(amount: number, kind: FlowKind, _origins: Float64Array | null): void {
+  recordDestruction(amount: number, kind: FlowKind, _origins: Float64Array | null, sink: MoneySink): void {
     const f = this.flowsMonth;
     if (kind === 'principal') f.repayment += amount;
     else if (kind === 'interest' || kind === 'rent') f.interest += amount;
     else if (kind === 'tax' || kind === 'resolution') f.publicIn += amount;
+    else if (kind === 'import' || kind === 'migrate' || kind === 'flight') f.tradeOut += amount;
     else f.assetSales += amount;
+    this.genesis?.onDestroyed(amount, kind, sink);
   }
 
   event(type: SimEventType, agent: number, amount?: number, other?: number, text?: string): void {
@@ -335,6 +346,7 @@ export class Economy implements LedgerHost {
     firms.startOfDay(this);
     markets.shoppingDay(this);
     firms.restockDay(this);
+    this.genesis?.tradeDay();
     construction.constructionDay(this);
 
     // incomes
@@ -360,6 +372,7 @@ export class Economy implements LedgerHost {
       this.endOfMonth();
       banking.liquiditySweep(this);
     }
+    this.genesis?.endOfDay();
     if (this.checkInvariants) this.assertInvariants();
   }
 
@@ -375,6 +388,7 @@ export class Economy implements LedgerHost {
     households.migrationMonthly(this);
     resolution.charterMonthly(this);
     housing.housingMonthly(this);
+    this.genesis?.monthly();
     this.stats.snapshot(this);
     this.news.macro(this);
     this.flowsLast = this.flowsMonth;

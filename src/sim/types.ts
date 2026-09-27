@@ -41,7 +41,12 @@ export type FlowKind =
   | 'resolution' // deposit insurance payouts etc.
   | 'expense' // bank operating costs paid to firms
   | 'coupon' // government bond interest
-  | 'transfer'; // other transfers (bank switching, migration savings)
+  | 'transfer' // other transfers (bank switching, migration savings)
+  // Genesis Mode: money crossing the town's border (to and from banks elsewhere)
+  | 'export' // the wider region buys the town's goods: money arrives
+  | 'import' // the town buys from the region (goods, outside contractors): money leaves
+  | 'migrate' // savings arriving or leaving with people
+  | 'flight'; // depositors moving their money to banks outside town
 
 export interface FlowEvent {
   day: number;

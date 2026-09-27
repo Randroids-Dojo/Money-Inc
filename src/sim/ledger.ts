@@ -32,7 +32,8 @@ export interface LedgerHost {
   recordFlow(from: number, to: number, amount: number, kind: FlowKind, loan?: number): void;
   recordSettlement(from: Bank, to: Bank, amount: number): void;
   recordCreation(amount: number, kind: FlowKind, origin: number): void;
-  recordDestruction(amount: number, kind: FlowKind, origins: Float64Array | null): void;
+  /** `sink`: who received the payment that extinguished the deposit */
+  recordDestruction(amount: number, kind: FlowKind, origins: Float64Array | null, sink: MoneySink): void;
   treasuryId: number;
   difId: number;
   cbId: number;
@@ -41,6 +42,8 @@ export interface LedgerHost {
 }
 
 export type PublicEntity = 'treasury' | 'dif' | 'cb';
+/** Where destroyed deposit money went: a bank, the public sector, or out of town (Genesis Mode). */
+export type MoneySink = 'bank' | 'public' | 'outside';
 
 const scratch = new Float64Array(MAX_ORIGINS);
 
@@ -98,7 +101,7 @@ export class Ledger {
     const amt = Math.min(amount, from.balance);
     if (!(amt > 0)) return 0;
     const destroyed = this.debitOrigin(from, amt);
-    this.host.recordDestruction(amt, kind, destroyed);
+    this.host.recordDestruction(amt, kind, destroyed, 'bank');
     from.balance -= amt;
     from.bank.deposits -= amt;
     if (from.bank !== bank) {
@@ -147,7 +150,7 @@ export class Ledger {
     const amt = Math.min(amount, from.balance);
     if (!(amt > 0)) return 0;
     const destroyed = this.debitOrigin(from, amt);
-    this.host.recordDestruction(amt, kind, destroyed);
+    this.host.recordDestruction(amt, kind, destroyed, 'public');
     from.balance -= amt;
     from.bank.deposits -= amt;
     from.bank.reserves -= amt;
@@ -182,6 +185,50 @@ export class Ledger {
     if (payer === 'treasury') this.host.publicBalances.treasury -= amount;
     else if (payer === 'dif') this.host.publicBalances.dif -= amount;
     this.host.recordFlow(this.publicId(payer), bank.id, amount, kind);
+  }
+
+  /**
+   * Genesis Mode: money arrives from banks outside town (export sales, newcomers' savings).
+   * The receiving bank gains the reserves that settle the payment and owes a new deposit.
+   */
+  fromOutside(to: Account, amount: number, kind: FlowKind, fromId: number): void {
+    if (!(amount > 0)) return;
+    to.bank.reserves += amount;
+    to.bank.deposits += amount;
+    to.balance += amount;
+    to.origin[ORIGIN_LEGACY] += amount;
+    this.host.recordCreation(amount, kind, ORIGIN_LEGACY);
+    this.host.recordFlow(fromId, to.ownerId, amount, kind);
+  }
+
+  /**
+   * Genesis Mode: money leaves town (imports, outside contractors, departing savings, deposit
+   * flight). The deposit disappears from the town's banks, and so do the reserves that settle it.
+   */
+  toOutside(from: Account, amount: number, kind: FlowKind, toId: number): number {
+    const amt = Math.min(amount, from.balance);
+    if (!(amt > 0)) return 0;
+    const destroyed = this.debitOrigin(from, amt);
+    this.host.recordDestruction(amt, kind, destroyed, 'outside');
+    from.balance -= amt;
+    from.bank.deposits -= amt;
+    from.bank.reserves -= amt;
+    this.host.recordFlow(from.ownerId, toId, amt, kind);
+    return amt;
+  }
+
+  /** Genesis Mode: a bank pays someone outside town out of its reserves (e.g. dividends to its owners). */
+  bankToOutside(bank: Bank, amount: number, kind: FlowKind, toId: number): void {
+    if (!(amount > 0)) return;
+    bank.reserves -= amount;
+    this.host.recordFlow(bank.id, toId, amount, kind);
+  }
+
+  /** Genesis Mode: reserves arrive at a bank from outside (capital from investors elsewhere). */
+  outsideToBank(bank: Bank, amount: number, kind: FlowKind, fromId: number): void {
+    if (!(amount > 0)) return;
+    bank.reserves += amount;
+    this.host.recordFlow(fromId, bank.id, amount, kind);
   }
 
   /** Move an account to a different bank (depositor switching banks, or a failed bank's book transferring). */

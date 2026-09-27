@@ -18,6 +18,7 @@ const ICONS: Record<Scenario, string> = {
   easy: '💸',
   fragile: '⚠️',
   tight: '🛡️',
+  genesis: '🌱',
 };
 
 const MAX_SEED = 999_999;

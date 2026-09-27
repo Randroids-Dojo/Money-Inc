@@ -7,12 +7,106 @@ import type { Economy } from './economy';
 import { addBonds, growth, invalidateMetrics } from './banking';
 import { bondPrice } from './markets';
 import { fmtMoney, pct } from './format';
+import type { Household } from './agents';
 
 export function publicDaily(eco: Economy, dom: number): void {
+  if (eco.genesis) {
+    genesisPublicDaily(eco, dom);
+    return;
+  }
   if (dom === 0) payBenefits(eco);
   if (dom === 10) publicPayroll(eco);
   if (dom % 5 === 2) procurement(eco);
   treasuryFinancing(eco);
+}
+
+/**
+ * Genesis Mode: the new town's council spends only what it has collected in taxes. It pays
+ * benefits and its few staff first, then buys services and repairs locally — or from
+ * contractors across the river while the town has no builder of its own.
+ */
+function genesisPublicDaily(eco: Economy, dom: number): void {
+  const t = eco.treasury;
+  const pb = eco.publicBalances;
+  const cap = (x: number) => Math.max(0, Math.min(x, pb.treasury));
+  if (dom === 0) {
+    const benefit = eco.market.wageIndex * CFG.benefitRatio;
+    const pension = eco.market.wageIndex * CFG.pensionRatio;
+    const due: [Household, number][] = [];
+    let total = 0;
+    for (const h of eco.households) {
+      if (h.departed || h.employed || h.homeUnit < 0 || h.firms.length > 0) continue;
+      const amt = h.retired ? pension : benefit;
+      due.push([h, amt]);
+      total += amt;
+    }
+    const k = total > 0 ? cap(total) / total : 0;
+    for (const [h, amt] of due) {
+      const x = amt * k;
+      if (x < 1) continue;
+      eco.ledger.publicPay('treasury', h.acct, x, 'benefit');
+      h.incomeThisMonth += x;
+      t.benefitsMonth += x;
+      t.spendMonth += x;
+    }
+  }
+  if (dom === 10) {
+    for (const hid of t.employees) {
+      const h = eco.household(hid);
+      if (!h) continue;
+      const net = cap(h.wage * (1 - CFG.taxRate));
+      if (net <= 0) break;
+      eco.ledger.publicPay('treasury', h.acct, net, 'wage');
+      h.incomeThisMonth += net;
+      h.wagesThisMonth += h.wage;
+      t.spendMonth += net;
+      eco.monthCounters.governmentSpend += h.wage;
+    }
+  }
+  if (dom % 5 === 2) {
+    let wages = 0;
+    for (const hid of t.employees) wages += eco.household(hid)?.wage ?? 0;
+    const reserve = (wages + t.benefitsMonth) * 1.5;
+    const monthly = Math.max(0, t.taxSmoothed - wages * (1 - CFG.taxRate) - t.benefitsMonth) + CFG.surplusRecycling * Math.max(0, pb.treasury - reserve);
+    let budget = cap(monthly / 6);
+    const services = eco.firms.filter((f) => f.status === 'open' && f.sector === 'service');
+    const builders = eco.firms.filter((f) => f.status === 'open' && f.sector === 'builder');
+    const buy = (f: (typeof services)[number], dollars: number) => {
+      const units = Math.min(dollars / f.price, Math.max(0, f.capacity * 1.1 - f.m.units));
+      const amt = cap(units * f.price);
+      if (amt <= 0) return 0;
+      eco.ledger.publicPay('treasury', f.acct, amt, 'invest');
+      f.m.units += amt / f.price;
+      f.m.revenue += amt;
+      t.spendMonth += amt;
+      eco.monthCounters.governmentSpend += amt;
+      return amt;
+    };
+    if (builders.length) {
+      const share = (budget * 0.35) / builders.length;
+      for (const b of builders) budget -= buy(b, share);
+    }
+    if (services.length) {
+      const share = budget / services.length;
+      for (const s of services) budget -= buy(s, share);
+    }
+    if (!builders.length && budget > 1) {
+      // public works by contractors from across the river: the money leaves town
+      const amt = cap(budget * 0.35);
+      pb.treasury -= amt;
+      t.spendMonth += amt;
+      eco.monthCounters.governmentSpend += amt;
+      eco.recordFlow(t.id, eco.world.id, amt, 'import');
+      if (eco.genesis) eco.genesis.trade.outsideBuild += amt;
+    }
+  }
+  // an overdraft (only after a bail-out) is covered by the Reserve Bank
+  if (pb.treasury < 0) {
+    const need = -pb.treasury;
+    eco.cb.bills += need;
+    pb.treasury += need;
+    t.bills += need;
+  }
 }
 
 /**

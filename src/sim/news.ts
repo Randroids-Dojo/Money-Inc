@@ -27,6 +27,8 @@ export class News {
 
   /** Report macro turning points with hysteresis so the ticker is not spammy. */
   macro(eco: Economy): void {
+    // Genesis Mode: a handful of households make for silly statistics; wait until it is a town
+    if (eco.genesis && !eco.genesis.macroNews) return;
     const st = eco.stats;
     if (st.length) this.yearReview(eco);
     if (st.length < 13) return;

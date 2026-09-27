@@ -7,6 +7,7 @@ import type { Firm, Household, MbsPool } from './agents';
 import type { Bank } from './bank';
 import { collateralNow, growth } from './banking';
 import { fundExcessCash } from './fund';
+import { IMPORT_MARKUP, importConsumption, importGoods, localShare, regionPrice } from './genesis/trade';
 
 // ============================================================================ securities
 
@@ -134,8 +135,10 @@ export function shoppingDay(eco: Economy): void {
       continue;
     }
     const goods = spend * rs;
-    buyFrom(eco, h, 'retail', goods, openRetail);
-    buyFrom(eco, h, 'service', spend - goods, openService);
+    const gotGoods = buyFrom(eco, h, 'retail', goods, openRetail);
+    const gotServices = buyFrom(eco, h, 'service', spend - goods, openService);
+    // Genesis Mode: what the town cannot supply, people buy across the river
+    if (eco.genesis) importConsumption(eco, eco.genesis, h, goods - gotGoods, spend - goods - gotServices);
   }
 }
 
@@ -157,7 +160,8 @@ export function buyFrom(eco: Economy, h: Household, sector: 'retail' | 'service'
   if (extra && !order.includes(extra)) order.push(extra);
   let left = dollars;
   for (const f of order) {
-    const units = left / f.price;
+    // (Genesis Mode: if a shop charges more than the same thing costs across the river, people go there instead)
+    const units = eco.genesis ? (left * localShare(eco, sector, f.price)) / f.price : left / f.price;
     let can = Math.min(units, Math.max(0, f.capToday));
     if (sector === 'retail') can = Math.min(can, Math.max(0, f.inventory));
     if (can > 0.01) {
@@ -193,8 +197,13 @@ export function buyGoods(
   loan?: number,
 ): number {
   if (units <= 0) return 0;
-  const factories = eco.firms.filter((f) => f.status === 'open' && f.sector === 'factory');
-  if (!factories.length) return 0;
+  let factories = eco.firms.filter((f) => f.status === 'open' && f.sector === 'factory');
+  // (Genesis Mode: a local workshop dearer than goods brought in from the region loses the order)
+  if (eco.genesis) {
+    const ip = regionPrice(eco) * IMPORT_MARKUP;
+    factories = factories.filter((f) => f.price <= ip);
+  }
+  if (!factories.length) return eco.genesis ? importGoods(eco, eco.genesis, buyer, units, kind, loan) : 0;
   let left = units;
   // orders are split across suppliers by market share (capacity, cheaper is better);
   // whatever a supplier cannot deliver spills over to the others
@@ -218,6 +227,7 @@ export function buyGoods(
     if (left <= 0.01) break;
     deliver(o.f, left);
   }
+  if (left > 0.01 && eco.genesis) left -= importGoods(eco, eco.genesis, buyer, left, kind, loan);
   if (left > 0.01) {
     // spread the unmet order across factories (shortage signal)
     const per = left / order.length;
@@ -229,17 +239,20 @@ export function buyGoods(
 // ============================================================================ labour market
 
 export function publicStaffTarget(eco: Economy): number {
+  // Genesis Mode: City Hall hires only as many people as its tax revenue can pay
+  if (eco.genesis) return Math.min(Math.round(eco.population() * 0.1), Math.floor((eco.treasury.taxSmoothed * 0.4) / Math.max(1, eco.market.wageIndex)));
   return Math.round(eco.population() * 0.1);
 }
 
 export function bankStaffTarget(eco: Economy, b: Bank): number {
+  if (eco.genesis) return eco.genesis.bankStaffTarget(b);
   if (!b.alive) return 0;
   return Math.max(1, Math.min(5, Math.round((b.deposits + b.loanBook()) / 9_000_000)));
 }
 
 export function labourMarketDay(eco: Economy): void {
   const unemployed: Household[] = [];
-  for (const h of eco.households) if (!h.departed && !h.employed && !h.retired && h.homeUnit >= 0 && eco.day >= h.searchUntil) unemployed.push(h);
+  for (const h of eco.households) if (!h.departed && !h.employed && !h.retired && (h.homeUnit >= 0 || h.lodging) && eco.day >= h.searchUntil) unemployed.push(h);
   eco.rng.shuffle(unemployed);
   const employers: { id: number; vac: number }[] = [];
   for (const f of eco.firms) if ((f.status === 'open' || f.status === 'planned') && f.vacancies > 0) employers.push({ id: f.id, vac: f.vacancies });
@@ -268,6 +281,8 @@ export function labourMarketDay(eco: Economy): void {
 function poach(eco: Economy, f: Firm): void {
   const cand = eco.households[Math.floor(eco.rng.next() * eco.households.length)];
   if (!cand || cand.departed || !cand.employed || cand.employer === f.id) return;
+  // Genesis Mode: owners running their own business are not for hire
+  if (eco.genesis && cand.firms.includes(cand.employer)) return;
   const offer = f.wage * cand.skill;
   if (offer < cand.wage * 1.06) {
     // bid up wages next review
@@ -302,6 +317,7 @@ export function hire(eco: Economy, employerId: number, h: Household): void {
   h.note(eco.day, `Hired by ${emp.name}`, 'good', undefined, employerId);
   eco.event('hire', employerId, undefined, h.id);
   eco.monthCounters.hires++;
+  eco.genesis?.onHire(employerId, h);
 }
 
 export function fire(eco: Economy, h: Household, reason: string, quit = false): void {
@@ -322,6 +338,7 @@ export function fire(eco: Economy, h: Household, reason: string, quit = false): 
     eco.event('layoff', prev, undefined, h.id);
     eco.monthCounters.layoffs++;
   }
+  eco.genesis?.onFire(h, prev, quit);
 }
 
 // ============================================================================ monthly indices
@@ -345,10 +362,12 @@ function sectorAvgPrice(eco: Economy, sector: string, prev: number): number {
 
 export function monthlyIndices(eco: Economy): void {
   const m = eco.market;
-  m.retailPrice = sectorAvgPrice(eco, 'retail', m.retailPrice);
-  m.servicePrice = sectorAvgPrice(eco, 'service', m.servicePrice);
-  m.factoryPrice = sectorAvgPrice(eco, 'factory', m.factoryPrice);
-  m.builderPrice = sectorAvgPrice(eco, 'builder', m.builderPrice);
+  // (Genesis Mode: what the town cannot make for itself it pays the region's price for, delivered)
+  const rp = eco.genesis ? regionPrice(eco) : 0;
+  m.retailPrice = sectorAvgPrice(eco, 'retail', eco.genesis ? rp * IMPORT_MARKUP : m.retailPrice);
+  m.servicePrice = sectorAvgPrice(eco, 'service', eco.genesis ? rp * 1.15 : m.servicePrice);
+  m.factoryPrice = sectorAvgPrice(eco, 'factory', eco.genesis ? rp * IMPORT_MARKUP : m.factoryPrice);
+  m.builderPrice = sectorAvgPrice(eco, 'builder', eco.genesis ? rp : m.builderPrice);
   m.cpi = SECTORS.retail.demandShare * m.retailPrice + SECTORS.service.demandShare * m.servicePrice;
   m.cpiHistory.push(m.cpi);
   if (m.cpiHistory.length > 1200) m.cpiHistory.shift();
@@ -363,7 +382,8 @@ export function monthlyIndices(eco: Economy): void {
     n++;
   }
   if (n > 0) m.wageIndex = w / n;
-  m.unemployment = eco.unemploymentRate();
+  // (Genesis Mode: a handful of people is too few for a meaningful rate; the region's labour market weighs in)
+  m.unemployment = eco.genesis ? eco.genesis.labourSignal() : eco.unemploymentRate();
 
   let totRev = 0,
     totProfit = 0;
