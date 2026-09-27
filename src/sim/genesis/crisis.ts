@@ -73,6 +73,13 @@ function capitalGap(eco: Economy, b: Bank, target: number): number {
   return Math.max(0, target * m.rwa - m.equity);
 }
 
+/** New shares a bank could sell: enough to restore its capital target, and never a token amount. */
+function capitalRaise(eco: Economy, b: Bank): number {
+  const m = metrics(eco, b);
+  const gap = capitalGap(eco, b, eco.policy.capitalRequirement + b.personality.capitalBuffer + 0.02);
+  return Math.round(Math.max(25_000, gap, m.equity * 0.2) / 5_000) * 5_000;
+}
+
 // ============================================================================ trouble
 
 export function troubleOptions(g: Genesis, l: Loan): ActionOption<TroubleAction>[] {
@@ -235,7 +242,7 @@ export function constraintOptions(g: Genesis, b: Bank): ActionOption<ConstraintA
     {
       id: 'capital',
       label: 'Raise new capital',
-      effect: `Sell ${fmtMoney(capitalGap(eco, b, eco.policy.capitalRequirement + b.personality.capitalBuffer + 0.02))} of new shares to investors across the river.`,
+      effect: `Sell ${fmtMoney(capitalRaise(eco, b))} of new shares to investors across the river: more capital, and cash arriving from outside.`,
       disabled: m.equity <= 0 || b.stress > 0.6 ? 'Investors will not buy shares in a bank in this state.' : undefined,
     },
   ];
@@ -305,7 +312,8 @@ export function applyConstraint(g: Genesis, b: Bank, a: ConstraintAction): strin
       b.log(eco.day, 'Stopped paying dividends to rebuild capital', 'neutral');
       return 'No dividends for a year.';
     case 'capital': {
-      const amt = Math.max(25_000, capitalGap(eco, b, capTarget + 0.02));
+      const amt = capitalRaise(eco, b);
+      void capTarget;
       eco.ledger.outsideToBank(b, amt, 'capital', eco.world.id);
       b.paidIn += amt;
       invalidateMetrics(b);

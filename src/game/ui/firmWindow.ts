@@ -6,6 +6,7 @@ import type { Loan } from '../../sim/loan';
 import { fmtDate } from '../../sim/format';
 import { agentLink, loanKindLabel, loanLink, loanStatusLabel, loanStatusTone, money, percent, storyList } from './common';
 import type { UIContext } from './context';
+import { traceButton } from './genesis/trace';
 
 const SECTOR_LABEL: Record<Firm['sector'], string> = {
   retail: 'Shop',
@@ -89,6 +90,7 @@ export function openFirmWindow(ctx: UIContext, id: number, anchor?: { x: number;
           f.status === 'closed' ? badge('CLOSED', 'bad') : f.status === 'planned' ? badge('BEING BUILT', 'info') : badge(hl, ht),
           f.status === 'open' && f.vacancies > 0 ? badge('HIRING', 'good') : null,
           f.project >= 0 ? badge('EXPANDING', 'info') : null,
+          traceButton(ctx, { kind: 'firm', id: f.id }),
         ),
       );
       switch (wctx.tab) {

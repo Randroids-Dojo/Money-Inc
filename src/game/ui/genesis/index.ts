@@ -10,7 +10,7 @@ import type { Hud } from '../hud';
 import { deadlineText, KIND_ICON, openDesk, openSituation, setDecisionListener } from './situations';
 import { installMilestones } from './milestones';
 import { createLedger } from './ledger';
-import { createTrace, type TraceController } from './trace';
+import { createTrace, setTraceController, type TraceController } from './trace';
 import { openJournal } from './journal';
 
 export interface GenesisUi {
@@ -27,6 +27,7 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
   let wasActive = false;
   const ledger = createLedger(ctx, (px) => hud.setAlertsTop(px ? px + 16 : 0));
   const trace = createTrace(ctx);
+  setTraceController(trace);
   const milestones = installMilestones(ctx, (agent) => trace.openAgent(agent));
   const journal = (tab?: string) => openJournal(ctx, { trace: (k) => trace.open(k) }, tab);
 
@@ -71,7 +72,7 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
     const g = game.eco.genesis!;
     const el = h(
       'div',
-      { class: 'gn-toast mi-ui' },
+      { class: 'gn-toast mi-ui', dataset: { sit: s.id } },
       h('span', { class: 'gn-toast-icon' }, KIND_ICON[s.kind]),
       h('div', { class: 'gn-toast-main' }, h('div', { class: 'gn-toast-title' }, s.title), h('div', { class: 'gn-toast-sub' }, deadlineText(g, s))),
       s.lotId >= 0 ? button('Show', () => ctx.showOnMap({ kind: 'lot', id: s.lotId }), { small: true }) : null,
@@ -88,6 +89,11 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
   const scan = () => {
     const g = game.eco.genesis;
     if (!g) return;
+    // notes about matters already settled go away
+    for (const el of [...toasts.children] as HTMLElement[]) {
+      const s = g.situation(Number(el.dataset.sit));
+      if (!s || s.status !== 'open') el.remove();
+    }
     for (const s of g.situations) {
       if (s.id <= seenSit) continue;
       seenSit = Math.max(seenSit, s.id);
@@ -109,6 +115,7 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
   };
 
   setDecisionListener(() => {
+    scan();
     ctx.renderer.invalidate();
     milestones.scan();
     ledger.update();

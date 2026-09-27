@@ -418,6 +418,7 @@ export function createTrace(ctx: UIContext): TraceController {
     build();
     if (!isOpen('gtrace')) panel();
     else rerender();
+    getWindow('gtrace')?.setTitle(`Tracing ${short(gg.lineage.get(key)!.label, 30)}`);
     const n = gg.lineage.get(key)!;
     const end = endOf(gg, n);
     if (end && 'lot' in end) ctx.renderer.focusLot(end.lot);
@@ -431,6 +432,8 @@ export function createTrace(ctx: UIContext): TraceController {
     focus = null;
     build();
     rerender();
+    const n = g()?.lineage.get(k);
+    if (n) getWindow('gtrace')?.setTitle(`Tracing ${short(n.label, 30)}`);
   }
 
   function exit(): void {
@@ -491,4 +494,23 @@ export function createTrace(ctx: UIContext): TraceController {
       if (!openSelection(game.selection)) open(nodeKey('bank', gg.genesisBankId));
     },
   };
+}
+
+// ------------------------------------------------------------------------------------ entry points in other windows
+
+let current: TraceController | null = null;
+
+/** Remember the trace controller so other windows can offer "Trace history". */
+export function setTraceController(t: TraceController): void {
+  current = t;
+}
+
+/** A small "Trace history" button for an entity's window (Genesis Mode only; null otherwise). */
+export function traceButton(ctx: UIContext, sel: Selection): HTMLElement | null {
+  const g = ctx.game.eco.genesis;
+  if (!g || !current || !sel) return null;
+  const key = keyForSelection(g, sel);
+  if (!key) return null;
+  const t = current;
+  return button('Trace history', () => t.open(key), { small: true, icon: '🔍', title: 'Dim the town and light up everything this is connected to (T)' });
 }

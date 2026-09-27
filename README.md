@@ -42,6 +42,7 @@ npm run dev        # open the printed URL
 | `G` / `N` / `H` | Statistics, news, how it works |
 | `L` | Cycle data lenses: bank market share, debt and arrears, money origin, property values, jobs |
 | `F` | Toggle the money-flow overlay |
+| `K` / `J` / `T` | Genesis Mode: your desk, the town journal, trace mode |
 | `Esc` | Close the top window |
 
 The bottom strip shows the date, the speed controls, a news ticker and key indicators: money
@@ -60,6 +61,47 @@ up at the top of the screen.
 - Cut the policy rate to 0% and lower the capital requirement. Then raise the rate to 10%.
 - Start a **No Safety Net** city (no deposit insurance, no lender of last resort) and wait
   for a run. People queue outside the bank.
+
+## Genesis Mode
+
+Pick **Genesis** on the title screen to start from almost nothing: one bank (Genesis Bank),
+one would-be business, one person looking for work, a few cottages — and not a single dollar
+of bank money. The world waits for the first economic event: the first loan.
+
+- **You make the key decisions; the town does the rest.** Early on every loan comes to your
+  desk (`K`) with its business plan or home purchase, the terms you can change (size, rate,
+  term, security) and what it would do to the bank. Later the banks decide routine loans under
+  your **lending rules** (Reserve Bank → *Lending rules*), and you are called for the big
+  moments: missed payments, a bank at its limits, a run, a failing bank, a new bank's licence.
+  Nothing says which choice is right. Each option says what it does, and the simulation plays
+  it out.
+- **The first loan** shows both balance sheets: +$100K loan and +$100K deposit for the bank,
+  +$100K deposit and +$100K loan for the business, and money in town going from $0 to $100K.
+  After that, the town's firsts (first employee, paycheck, repayment, mortgage, default,
+  second bank...) are marked with banners that fade as the town grows.
+- **Trace mode** (`T`) dims the town and lights up what anything is connected to: direct
+  relationships in gold, what followed further on in blue, where it came from in teal. Click a
+  lit building to see the chain, or anything else to trace from there. Relationships are
+  recorded, not individual dollars, and "downstream" means connected, not caused.
+- **The town journal** (`J`) keeps every decision you made, what changed after it, the
+  town's firsts, and the life of the first bank: what it financed, what became of its loans,
+  and who took over its book if it failed. Genesis Bank has no plot armour.
+- **The money ledger** in the corner: money in town, lent into existence, still owed,
+  repaid (destroyed), paid as interest, written off. The "other ways" section adds banks' own
+  spending, City Hall and trade with the region, and the total balances to the dollar.
+
+The town is a small open economy. It sells to the region and buys from it. Newcomers arrive
+for jobs and board with families until homes are built: by families with mortgages, by
+employers for their workers, or by builders to sell. Money spent across the river drains the
+town's bank of reserves. That is why a small bank can run short of cash long before it runs
+short of capital.
+
+```bash
+npx tsx scripts/genesis.ts --seed 3 --years 20 --player bank --check   # headless Genesis run
+# player: bank (go along with the banks), yes (approve all), big, small, no
+```
+
+Add `?scenario=genesis` to the URL to skip the title screen.
 
 ## How the simulation works
 

@@ -34,7 +34,7 @@ import { INSURANCE_LIMITS, type PolicySettings } from '../../sim/types';
 import type { UIContext } from './context';
 import { openStatsWindow } from './statsWindow';
 
-type TabId = 'play' | 'money' | 'banks' | 'cycles' | 'colours';
+type TabId = 'play' | 'money' | 'banks' | 'cycles' | 'colours' | 'genesis';
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'play', label: 'How to play', icon: '🎮' },
@@ -42,6 +42,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'banks', label: 'Banks', icon: '🏦' },
   { id: 'cycles', label: 'Booms & busts', icon: '🎢' },
   { id: 'colours', label: 'Legend', icon: '🎨' },
+  { id: 'genesis', label: 'Genesis', icon: '🌱' },
 ];
 
 const isTab = (t: string | undefined): t is TabId => !!t && TABS.some((x) => x.id === t);
@@ -103,6 +104,8 @@ function signature(ctx: UIContext, tab: TabId): readonly unknown[] {
       return [eco, eco.stats.length, eco.policy.capitalRequirement];
     case 'colours':
       return [eco, ctx.game.showFlows];
+    case 'genesis':
+      return [eco, eco.genesis?.era];
   }
 }
 
@@ -180,6 +183,67 @@ function pctRule(v: number): string {
 // Pages
 
 const PAGES: Record<TabId, (ctx: UIContext, w: WindowCtx) => Child[]> = {
+  genesis: (ctx) => {
+    const g = ctx.game.eco.genesis;
+    return [
+      h(
+        'div',
+        { class: 'mi-help-hero' },
+        iconEl('🌱', { px: 14, scale: 2 }),
+        h(
+          'p',
+          null,
+          h('b', 'Genesis Mode'),
+          ' starts with the smallest economy there can be: one bank, one would-be business, one person looking for work — and not a single dollar of bank money. Every dollar in town begins as a loan somebody approved, or arrives from across the river.',
+        ),
+      ),
+      g ? note(`This town is in the era of ${g.era === 'transactions' ? 'Transactions' : g.era === 'institutions' ? 'Institutions' : 'System'}.`, 'info') : note('Choose Genesis on the title screen (🎲 New city) to play it.', 'muted'),
+      section(
+        'Your part',
+        h(
+          'ul',
+          { class: 'mi-help-list' },
+          h('li', h('b', 'Transactions. '), 'At first every loan crosses your desk. Read the plan, change the size, the rate, the term or the security, approve it or turn it down.'),
+          h('li', h('b', 'Institutions. '), 'Once the town has outgrown your desk the banks decide routine loans under your lending rules; big ones and the first of each kind still come to you.'),
+          h('li', h('b', 'System. '), 'In the end you govern through rules, rates and what you do when a borrower, a bank or the whole town is in trouble.'),
+        ),
+        h('p', { class: 'gm-para' }, 'Nothing tells you which choice is right. Each option says what it does; the town shows you what it leads to.'),
+      ),
+      section(
+        'Your desk (K)',
+        h('p', { class: 'gm-para' }, 'Decisions wait on your desk. A few stop the clock until you decide: the first loans, a bank run, a failing bank. The rest have a deadline — leave them and the bank decides as it would have on its own.'),
+      ),
+      section(
+        'Following the money (T and J)',
+        kv([
+          ['Trace mode (T)', 'Dims the town and lights up what anything is connected to. Click lit buildings to see the chain; click anything else to trace from there.'],
+          ['Gold', 'direct relationships: it lent to, employed, built, bought'],
+          ['Blue', 'downstream: connected through others — not caused by'],
+          ['Teal', 'where it came from: its lenders, founders, owners'],
+          ['Town journal (J)', 'every decision you made, and what changed after it'],
+        ]),
+        note('Dollars are all alike and can’t be followed forever. Trace mode follows relationships instead: who lent to whom, who worked where, who bought which home with whose mortgage.', 'muted'),
+      ),
+      section(
+        'The money ledger',
+        h('p', { class: 'gm-para' }, 'The panel in the corner keeps the town’s money story. Lending creates deposits; repayments and interest paid to banks destroy them; write-offs remove the bank’s claim but not the money it created. Open “other ways” to see the rest: banks’ own spending, City Hall, and money crossing the river. The books balance to the dollar.'),
+      ),
+      section(
+        'A small town in a big region',
+        h(
+          'ul',
+          { class: 'mi-help-list' },
+          h('li', 'The town sells to the region and buys from it. Money spent across the river leaves the town’s banks, and they must hand over reserves to settle it — a small town’s bank can run short of cash long before it runs short of capital.'),
+          h('li', 'Banks across the river will lend a sound town bank reserves (about twice its capital) — and stop when it looks shaky. Investors there may buy new bank shares, or start a new bank in town.'),
+          h('li', 'Newcomers come for jobs and board with families until homes are built: by families with a mortgage, by employers for their workers, or by builders to sell.'),
+        ),
+      ),
+      section(
+        'No plot armour',
+        h('p', { class: 'gm-para' }, 'Genesis Bank can grow, lose its place to newer banks, be taken over or fail. If it goes, its history stays: every loan it made, and everything connected to them, can still be traced.'),
+      ),
+    ];
+  },
   play: (ctx) => {
     const eco = ctx.game.eco;
     return [

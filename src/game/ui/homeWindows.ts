@@ -7,6 +7,7 @@ import { unitValue } from '../../sim/banking';
 import { FIRST_BANK_ORIGIN, MAX_ORIGINS, ORIGIN_LEGACY, ORIGIN_PUBLIC } from '../../sim/ledger';
 import { agentLink, loanKindLabel, loanLink, loanStatusLabel, loanStatusTone, money, percent, storyList } from './common';
 import type { UIContext } from './context';
+import { traceButton } from './genesis/trace';
 
 /** Bar showing which bank created the money in an account: "every dollar has a history". */
 export function originBar(ctx: UIContext, origin: Float64Array, balance: number): HTMLElement {
@@ -74,8 +75,9 @@ export function openHouseholdWindow(ctx: UIContext, id: number, anchor?: { x: nu
           'div',
           { class: 'mi-row gm-badges' },
           statusOf(ctx, hh),
-          home ? badge(owns ? 'HOMEOWNER' : 'RENTING', owns ? 'good' : 'muted') : null,
+          home ? badge(owns ? 'HOMEOWNER' : 'RENTING', owns ? 'good' : 'muted') : hh.lodging ? badge('BOARDING WITH A FAMILY', 'muted') : null,
           hh.lookingToBuy ? badge(hh.lookingToBuy === 'home' ? 'HOUSE HUNTING' : 'INVESTING', 'info') : null,
+          traceButton(ctx, { kind: 'household', id: hh.id }),
         ),
       );
       if (wctx.tab === 'life') {
@@ -160,6 +162,8 @@ export function openResidenceWindow(ctx: UIContext, lotId: number, anchor?: { x:
       );
       if (units.length === 1) {
         const u = units[0];
+        const tb = traceButton(ctx, { kind: 'lot', id: lotId });
+        if (tb) body.append(h('div', { class: 'mi-row gm-badges' }, tb));
         body.append(unitDetails(ctx, u));
         const occ = eco.household(u.occupantId);
         if (occ) body.append(section('Who lives here', h('div', agentLink(ctx, occ.id), ' — ', statusOf(ctx, occ))));

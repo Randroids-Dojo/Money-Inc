@@ -9,19 +9,38 @@ import type { Bank } from '../../sim/bank';
 import { money, percent } from './common';
 import { grade } from '../mandate';
 import type { UIContext } from './context';
+import { rulesTab } from './genesis/rules';
 
 const pending = new Map<string, number>();
+/** value of each control when the player started changing it (for the Genesis journal) */
+const startedAt = new Map<string, number>();
 
-/** Announce a policy change in the news once the player stops fiddling with the control. */
-function announce(ctx: UIContext, key: string, text: () => string): void {
+const POLICY_WATCH: Record<string, ('credit' | 'hpi' | 'unemployment' | 'mortgageLending12' | 'businessLending12' | 'capitalRatio' | 'banks' | 'money')[]> = {
+  rate: ['credit', 'hpi', 'unemployment', 'mortgageLending12'],
+  cap: ['credit', 'capitalRatio', 'businessLending12'],
+  liq: ['credit', 'banks'],
+  qe: ['money', 'hpi'],
+  insurance: ['banks', 'money'],
+  lolr: ['banks'],
+};
+
+/**
+ * Announce a policy change in the news once the player stops fiddling with the control (and, in
+ * Genesis Mode, record it in the journal: `decision` gets the value the player started from).
+ */
+function announce(ctx: UIContext, key: string, text: () => string, from?: number, decision?: (from: number) => string): void {
   const t = pending.get(key);
   if (t) window.clearTimeout(t);
+  if (from !== undefined && !startedAt.has(key)) startedAt.set(key, from);
   pending.set(
     key,
     window.setTimeout(() => {
       pending.delete(key);
       const eco = ctx.game.eco;
       eco.headline(text(), 'policy', eco.cb.id, undefined, `policy-${key}-${eco.day}`, 0);
+      const f0 = startedAt.get(key);
+      startedAt.delete(key);
+      if (eco.genesis && decision && f0 !== undefined) eco.genesis.recordPolicy(decision(f0), POLICY_WATCH[key] ?? ['credit']);
     }, 1200),
   );
 }
@@ -38,6 +57,8 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
     initialTab: tab,
     tabs: [
       { id: 'controls', label: 'Controls' },
+      // (Genesis Mode: the rules every bank lends under)
+      ...(eco0.genesis ? [{ id: 'rules', label: 'Lending rules' }] : []),
       { id: 'banks', label: 'Supervision' },
       { id: 'sheet', label: 'Balance Sheet' },
     ],
@@ -46,10 +67,14 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
       const p = eco.policy;
       const st = eco.stats;
       const last = (k: Parameters<typeof st.last>[0]) => (st.length ? st.last(k) : NaN);
+      if (wctx.tab === 'rules') {
+        rulesTab(ctx, body, () => wctx.win.rerender());
+        return;
+      }
       if (wctx.tab === 'controls') {
         const md = ctx.game.mandate;
-        body.append(
-          h(
+        // (Genesis Mode has no public approval rating: the journal keeps the record instead)
+        const mandate = h(
             'div',
             { class: 'gm-mandate' },
             h('span', { class: ['gm-grade', `is-${grade(md.approval)}`] }, grade(md.approval)),
@@ -62,7 +87,10 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
                 md.reasons.length ? md.reasons.slice(0, 3).map((r) => `${r.label} (${r.delta > 0 ? '+' : ''}${Math.round(r.delta)})`).join(' · ') : 'Your mandate: 2% inflation, plenty of jobs, no bank failures.',
               ),
             ),
-          ),
+          );
+        if (eco.genesis) mandate.hidden = true;
+        body.append(
+          mandate,
           h(
             'div',
             { class: 'mi-grid3 gm-tiles' },
@@ -88,7 +116,13 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
                 onChange: (v) => {
                   const before = p.policyRate;
                   p.policyRate = Math.round(v * 400) / 400;
-                  announce(ctx, 'rate', () => `Reserve Bank ${p.policyRate > before ? 'raises' : 'cuts'} its policy rate to ${percent(p.policyRate, 2)}`);
+                  announce(
+                    ctx,
+                    'rate',
+                    () => `Reserve Bank ${p.policyRate > before ? 'raises' : 'cuts'} its policy rate to ${percent(p.policyRate, 2)}`,
+                    before,
+                    (f0) => `${p.policyRate > f0 ? 'Raised' : 'Cut'} the policy rate from ${percent(f0, 2)} to ${percent(p.policyRate, 2)}.`,
+                  );
                 },
               }),
               choice({
@@ -122,8 +156,15 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
               format: (v) => percent(v, 1),
               tip: 'Minimum equity per $ of risk-weighted loans. This is what really limits how much money banks can create. Raising it forces banks to lend less (or raise capital); lowering it lets them lend more on the same cushion.',
               onChange: (v) => {
+                const before = p.capitalRequirement;
                 p.capitalRequirement = v;
-                announce(ctx, 'cap', () => `New rule: banks must hold capital of at least ${percent(p.capitalRequirement, 1)} of risky assets`);
+                announce(
+                  ctx,
+                  'cap',
+                  () => `New rule: banks must hold capital of at least ${percent(p.capitalRequirement, 1)} of risky assets`,
+                  before,
+                  (f0) => `${p.capitalRequirement > f0 ? 'Raised' : 'Lowered'} the capital requirement from ${percent(f0, 1)} to ${percent(p.capitalRequirement, 1)}.`,
+                );
               },
             }),
             spinner({
@@ -135,8 +176,15 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
               format: (v) => percent(v, 0),
               tip: 'Cash and government securities banks must hold against deposits, so they can survive withdrawals.',
               onChange: (v) => {
+                const before = p.liquidityRequirement;
                 p.liquidityRequirement = v;
-                announce(ctx, 'liq', () => `New rule: banks must hold liquid assets of ${percent(p.liquidityRequirement, 0)} of deposits`);
+                announce(
+                  ctx,
+                  'liq',
+                  () => `New rule: banks must hold liquid assets of ${percent(p.liquidityRequirement, 0)} of deposits`,
+                  before,
+                  (f0) => `${p.liquidityRequirement > f0 ? 'Raised' : 'Lowered'} the liquidity requirement from ${percent(f0, 0)} to ${percent(p.liquidityRequirement, 0)}.`,
+                );
               },
             }),
           ),
@@ -153,7 +201,9 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
               ],
               onChange: (id) => {
                 p.depositInsurance = id as DepositInsurance;
-                eco.headline(`Deposit insurance now covers ${id === 'none' ? 'nothing' : id === 'basic' ? 'up to $50K' : id === 'standard' ? 'up to $250K' : 'every deposit'}`, 'policy', eco.cb.id);
+                const what = id === 'none' ? 'nothing' : id === 'basic' ? 'up to $50K' : id === 'standard' ? 'up to $250K' : 'every deposit';
+                eco.headline(`Deposit insurance now covers ${what}`, 'policy', eco.cb.id);
+                eco.genesis?.recordPolicy(`Set deposit insurance to cover ${what}.`, POLICY_WATCH.insurance);
               },
             }),
             choice({
@@ -166,7 +216,9 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
               ],
               onChange: (id) => {
                 p.emergencyLiquidity = id as EmergencyLiquidity;
-                eco.headline(`Reserve Bank emergency lending: ${id === 'none' ? 'switched off' : id === 'standard' ? 'available at a penalty rate' : 'generous'}`, 'policy', eco.cb.id);
+                const what = id === 'none' ? 'switched off' : id === 'standard' ? 'available at a penalty rate' : 'generous';
+                eco.headline(`Reserve Bank emergency lending: ${what}`, 'policy', eco.cb.id);
+                eco.genesis?.recordPolicy(`Made emergency lending to banks ${what === 'switched off' ? 'unavailable' : what}.`, POLICY_WATCH.lolr);
               },
             }),
           ),
@@ -184,8 +236,15 @@ export function openCentralBankWindow(ctx: UIContext, anchor?: { x: number; y: n
                 format: (v) => (v === 0 ? 'Off' : `${v > 0 ? 'Buy' : 'Sell'} ${money(Math.abs(v))}`),
                 tip: 'Buy securities with newly created reserves (pushing down long-term rates and adding deposits when bought from non-banks), or sell them to drain money (QT).',
                 onChange: (v) => {
+                  const before = p.qePerMonth;
                   p.qePerMonth = v;
-                  announce(ctx, 'qe', () => (p.qePerMonth === 0 ? 'Reserve Bank ends its asset purchases' : p.qePerMonth > 0 ? `Reserve Bank starts buying ${money(p.qePerMonth)} of securities a month` : `Reserve Bank starts selling ${money(-p.qePerMonth)} of bonds a month`));
+                  announce(
+                    ctx,
+                    'qe',
+                    () => (p.qePerMonth === 0 ? 'Reserve Bank ends its asset purchases' : p.qePerMonth > 0 ? `Reserve Bank starts buying ${money(p.qePerMonth)} of securities a month` : `Reserve Bank starts selling ${money(-p.qePerMonth)} of bonds a month`),
+                    before,
+                    () => (p.qePerMonth === 0 ? 'Ended the Reserve Bank’s asset purchases.' : p.qePerMonth > 0 ? `Started buying ${money(p.qePerMonth)} of securities a month with new reserves.` : `Started selling ${money(-p.qePerMonth)} of bonds a month.`),
+                  );
                 },
               }),
               choice({

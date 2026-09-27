@@ -1574,15 +1574,30 @@ export class Genesis {
     void d;
   }
 
-  /** A rule change by the player (or by a decision that implies it). */
+  /** A rule change by the player (or by a decision that implies it), recorded in the journal. */
   setRule<K extends keyof GenesisRules>(key: K, value: GenesisRules[K], byPlayer = true): void {
     const old = this.rules[key];
     if (old === value) return;
+    this.applyRule(key, value);
+    if (byPlayer) this.recordRule(key, old, value);
+  }
+
+  /** Change a rule now (the banks see it at once) without recording it yet. */
+  applyRule<K extends keyof GenesisRules>(key: K, value: GenesisRules[K]): void {
     this.rules[key] = value;
     for (const b of this.eco.banks) if (b.alive) setStandards(this.eco, b);
+  }
+
+  /** Put a rule change in the journal (once the player has settled on a value). */
+  recordRule<K extends keyof GenesisRules>(key: K, old: GenesisRules[K], value: GenesisRules[K]): void {
+    if (old === value) return;
     const text = ruleText(key, old, value);
     if (text) this.record(text, 'rules', [], ruleWatch(key));
-    void byPlayer;
+  }
+
+  /** A change to the Reserve Bank's own levers (rates, requirements, safety nets). */
+  recordPolicy(text: string, watch: DecisionRecord['watch']): void {
+    this.record(text, 'policy', [], watch);
   }
 
   // ============================================================================ indicators

@@ -20,6 +20,7 @@ import { fmtDate } from '../../sim/format';
 import { agentLink, loanKindLabel, loanStatusLabel, loanStatusTone, money, percent } from './common';
 import type { UIContext } from './context';
 import type { Loan } from '../../sim/loan';
+import { traceButton } from './genesis/trace';
 
 const STATUS: Record<Bank['status'], [string, Tone]> = {
   healthy: ['HEALTHY', 'good'],
@@ -76,6 +77,7 @@ export function openBankWindow(ctx: UIContext, id: number, anchor?: { x: number;
               b.alive ? badge(sn, snTone) : null,
               b.cbLoanEmergency ? badge('EMERGENCY LOAN', 'bad') : null,
               b.dividendsSuspended && b.alive ? badge('NO DIVIDENDS', 'warn') : null,
+              traceButton(ctx, { kind: 'bank', id: b.id }),
             ),
           );
           if (!b.alive) {

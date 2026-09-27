@@ -10,10 +10,11 @@ import type { Economy } from '../economy';
 export type AutoStyle = 'bank' | 'yes' | 'no' | 'big' | 'small';
 
 /** Decide every open situation the way `style` would. Returns a line per decision. */
-export function autoPlay(eco: Economy, style: AutoStyle): string[] {
+export function autoPlay(eco: Economy, style: AutoStyle, skip?: string): string[] {
   const g = eco.genesis!;
   const log: string[] = [];
   for (const s of g.open()) {
+    if (s.kind === skip) continue;
     if (s.kind === 'loan' && s.loan) {
       const r = s.loan;
       const c = { ...r.suggested };

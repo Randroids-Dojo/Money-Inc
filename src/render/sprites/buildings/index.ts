@@ -33,7 +33,7 @@ const MAX_LEVEL: Record<BuildingKind, number> = {
   park: 1,
 };
 
-const STATES: readonly BuildingState[] = ['normal', 'closed', 'failed', 'distressed', 'stalled', 'vacant'];
+const STATES: readonly BuildingState[] = ['normal', 'closed', 'failed', 'distressed', 'stalled', 'vacant', 'wild'];
 
 /** Characters the pixel font can draw on signs. */
 const SIGN_OK = /[A-Z0-9 &.\-!$%',?:/()#+]/;

@@ -224,7 +224,8 @@ function firstBank(ctx: UIContext, g: Genesis, hooks: JournalHooks, body: HTMLEl
         ['Repaid in full', `${f.repaid.length} · ${fmtMoney(f.sum(f.repaid))}`],
         ['Defaulted', `${f.defaulted.length} · ${fmtMoney(f.sum(f.defaulted))}`, { tone: f.defaulted.length ? 'bad' : undefined }],
         ['Sold on or packaged into securities', String(f.sold.length)],
-        ['Mortgages', `${f.mortgages.length} · on ${f.homes.size} home${f.homes.size === 1 ? '' : 's'}`],
+        ['Mortgages', String(f.mortgages.length)],
+        ['Homes it has held as security', String(f.homes.size), { hint: 'Homes pledged against its loans: mortgages, and business loans secured on an owner’s home.' }],
       ]),
     ),
     section(

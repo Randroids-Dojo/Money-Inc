@@ -4,7 +4,7 @@
 
 import { DAYS_PER_MONTH } from '../config';
 import { Economy } from '../economy';
-import { generateCity } from '../../world/city';
+import { generateCity, Terrain } from '../../world/city';
 import { Bank, type BankPersonality } from '../bank';
 import { CentralBank, DepositInsurer, Fund, Household, OutsideWorld, Treasury, Unit } from '../agents';
 import { FIRST_BANK_ORIGIN } from '../ledger';
@@ -43,6 +43,13 @@ function person(eco: Economy, name: string, skill: number, bank: Bank): Househol
 
 export function createGenesisEconomy(seed: number, policy: PolicySettings): Economy {
   const city = generateCity(seed);
+  // a new settlement: no car parks yet, and the gaps between plots are still wild
+  for (let i = 0; i < city.terrain.length; i++) {
+    if (city.terrain[i] !== Terrain.Parking) continue;
+    city.terrain[i] = Terrain.Grass;
+    const n = (i * 2654435761) >>> 0;
+    if (n % 10 < 7) city.decorations.push({ x: i % city.W, y: Math.floor(i / city.W), kind: n % 3 === 0 ? 'pine' : 'tree', variant: n % 8 });
+  }
   const eco = new Economy(seed, city, policy);
   const g = new Genesis(eco);
   eco.genesis = g;

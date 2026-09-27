@@ -340,9 +340,11 @@ export function emptylot(c: Ctx): void {
   const { r, F, s } = c;
   const A = F.A;
   const B = F.B;
+  const wild = s.state === 'wild';
   F.ground(0, 0, A, B, (a, b) => {
     const [x, y] = F.xy(a, b);
     const n = h01(Math.floor(a / 6), Math.floor(b / 6), c.seed) * 0.6 + h01(Math.floor(a / 3), Math.floor(b / 3), c.seed + 1) * 0.4;
+    if (wild) return n < 0.18 ? mix(dirt(x, y, c.seed), grass(x, y, c.seed, 0.9), 0.6) : grass(x, y, c.seed, 1);
     if (n < 0.33) return dirt(x, y, c.seed);
     if (n < 0.4) return mix(dirt(x, y, c.seed), grass(x, y, c.seed, 0.9), 0.5);
     return grass(x, y, c.seed, 0.9);
@@ -353,12 +355,12 @@ export function emptylot(c: Ctx): void {
     const a = 3 + h01(c.seed, k, 1) * (A - 6);
     const b = 3 + h01(c.seed, k, 2) * (B - 6);
     const [x, y] = F.xy(a, b);
-    if (k % 3 === 0) {
+    if (k % 3 === 0 && !wild) {
       const g = r.group();
       r.box(x, y, 0, x + 2, y + 2, 1 + (k % 2), rgb(150, 146, 138), rgb(170, 166, 158), g);
     } else r.stampAt(weedArt(k), x, y, 0, r.group(), true);
   }
-  if (s.variant % 3 === 0) drawSign(r, 'sign_lot', ...F.xy(A / 2 + 6, B - 4));
+  if (s.variant % 3 === 0 && !wild) drawSign(r, 'sign_lot', ...F.xy(A / 2 + 6, B - 4));
 }
 
 // ---------------------------------------------------------------------------

@@ -131,7 +131,7 @@ function loanBody(ctx: UIContext, g: Genesis, s: Situation, body: HTMLElement, r
         h('p', { class: 'gm-para' }, h('b', 'Customers: '), p.market, '.'),
         kv([
           owner ? ['Owner', agentLink(ctx, owner.id)] : null,
-          ['People it expects to employ', fig ? `${fig.staff}: ${[...p.staffNames, ...Array(Math.max(0, fig.staff - p.staffNames.length)).fill('someone new to hire')].slice(0, fig.staff).join(', ')}` : p.staffNames.join(', ')],
+          ['Staff', fig ? `${fig.staff}: ${[...p.staffNames, ...Array(Math.max(0, fig.staff - p.staffNames.length)).fill('someone new to hire')].slice(0, fig.staff).join(', ')}` : p.staffNames.join(', ')],
         ]),
         fig
           ? h(

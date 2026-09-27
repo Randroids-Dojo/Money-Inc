@@ -259,14 +259,17 @@ export class Traffic {
     let employed = 0;
     for (const h of eco.households) if (!h.departed && h.employed) employed++;
     const cars = this.movers.filter((m) => m.kind === 'car').length;
-    const carTarget = Math.round(4 + employed * 0.14);
+    // (Genesis Mode: a new town has no through traffic and no bus service — only its own people)
+    const young = !!eco.genesis;
+    const carTarget = young ? Math.round(employed * 0.35) : Math.round(4 + employed * 0.14);
     if (cars < carTarget) this.spawn('car', this.randomOf(this.resRoads), this.randomOf(this.workRoads));
     const buses = this.movers.filter((m) => m.kind === 'bus').length;
-    if (buses < 2) this.spawn('bus', this.randomOf(this.roadIdx), this.randomOf(this.roadIdx), { color: '#e8b030', info: 'City bus' });
+    const busTarget = young ? (eco.population() >= 60 ? 2 : eco.population() >= 30 ? 1 : 0) : 2;
+    if (buses < busTarget) this.spawn('bus', this.randomOf(this.roadIdx), this.randomOf(this.roadIdx), { color: '#e8b030', info: 'City bus' });
     // shoppers: busier when households are spending
     const spend = eco.flowsLast.lending >= 0 ? eco.monthCounters.consumption / Math.max(1, eco.dom + 1) : 0;
     const perHh = spend / Math.max(1, eco.population());
-    const shopTarget = Math.round(Math.min(70, 6 + eco.population() * 0.22 * Math.min(1.6, perHh / 100)));
+    const shopTarget = Math.round(Math.min(70, (young ? 0 : 6) + eco.population() * 0.22 * Math.min(1.6, perHh / 100)));
     const people = this.movers.filter((m) => m.kind === 'person').length;
     if (people < shopTarget) {
       const hh = eco.households[Math.floor(Math.random() * eco.households.length)];

@@ -23,7 +23,8 @@ export type BuildingState =
   | 'failed' // bank closed by regulator: shutters, CLOSED sign, dark
   | 'distressed' // bank/business under stress: drawn normally but with a subtle grim tint
   | 'stalled' // construction halted: tarp, idle crane, weeds
-  | 'vacant'; // residential with nobody home: all windows dark
+  | 'vacant' // residential with nobody home: all windows dark
+  | 'wild'; // empty land far from town: grass, no for-sale sign (Genesis Mode)
 
 export type RetailSubtype =
   | 'grocery'

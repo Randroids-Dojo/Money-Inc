@@ -61,7 +61,7 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
     };
     el.addEventListener('pointerenter', () => window.clearTimeout(timer));
     el.addEventListener('pointerleave', () => arm(5000));
-    arm(m.key === 'first_loan' ? 20000 : 11000);
+    arm(m.key === 'first_loan' ? 20000 : queue.length ? 5000 : 11000);
     showing = el;
     wrap.append(el);
     // money appears on the map where it happened
@@ -72,8 +72,16 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
   };
 
   const next = () => {
-    if (showing || !queue.length) return;
-    show(queue.shift()!);
+    if (showing) return;
+    // at high speed firsts can pile up: old news gets a small note instead of a banner
+    while (queue.length) {
+      const m = queue.shift()!;
+      if (game.eco.day - m.day > 45) small(m);
+      else {
+        show(m);
+        return;
+      }
+    }
   };
 
   const small = (m: Milestone) => {

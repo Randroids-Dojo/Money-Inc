@@ -217,6 +217,11 @@ export function buildLotVisuals(eco: Economy): LotVisual[] {
   // Genesis Mode: lots where a decision is waiting for the player (true = it stops the clock)
   const decisions = new Map<number, boolean>();
   if (eco.genesis) for (const s of eco.genesis.open()) if (s.lotId >= 0) decisions.set(s.lotId, (decisions.get(s.lotId) ?? false) || s.blocking);
+  // Genesis Mode: land well away from the settlement is still wild (no plots marked out for sale)
+  const settled: { x: number; y: number }[] = [];
+  if (eco.genesis) for (const lid of eco.lotUse.keys()) settled.push({ x: city.lots[lid].x, y: city.lots[lid].y });
+  const reach = eco.genesis ? 6 + Math.sqrt(eco.population()) * 1.2 : 0;
+  const wild = (lot: Lot) => !!eco.genesis && !settled.some((p) => Math.abs(p.x - lot.x) + Math.abs(p.y - lot.y) <= reach);
   for (const lot of city.lots) {
     const use = eco.lotUse.get(lot.id);
     let spec: BuildingSpriteSpec;
@@ -229,7 +234,7 @@ export function buildLotVisuals(eco: Economy): LotVisual[] {
     const signs: Sign[] = [];
     const base = { w: lot.w, d: lot.d, variant: lot.id, front: frontOf(lot) };
     if (!use) {
-      spec = lot.zone === 'park' ? { ...base, kind: 'park', level: 1 } : { ...base, kind: 'emptylot', level: 1 };
+      spec = lot.zone === 'park' ? { ...base, kind: 'park', level: 1 } : { ...base, kind: 'emptylot', level: 1, state: wild(lot) ? 'wild' : undefined };
       if (lot.zone === 'park') label = 'Park';
       else label = lot.zone === 'res' ? 'Vacant residential lot' : lot.zone === 'ind' ? 'Vacant industrial lot' : 'Vacant commercial lot';
     } else {

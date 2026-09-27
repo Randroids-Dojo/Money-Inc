@@ -7,6 +7,7 @@ import { collateralNow } from '../../sim/banking';
 import { fmtDate } from '../../sim/format';
 import { agentLink, loanKindLabel, loanStatusLabel, money, percent, storyList } from './common';
 import type { UIContext } from './context';
+import { traceButton } from './genesis/trace';
 
 export function openLoanWindow(ctx: UIContext, id: number, anchor?: { x: number; y: number }): void {
   const l0 = ctx.game.eco.loans.get(id);
@@ -28,7 +29,7 @@ export function openLoanWindow(ctx: UIContext, id: number, anchor?: { x: number;
       if (!l) return;
       const bank = eco.bank(l.originatorId);
       const tone = l.status === 'performing' ? 'good' : l.status === 'repaid' ? 'muted' : l.status === 'late' ? 'warn' : 'bad';
-      body.append(h('div', { class: 'mi-row gm-badges' }, badge(loanStatusLabel(l).toUpperCase(), tone), l.holder.kind !== 'bank' ? badge('SOLD ON', 'info') : null));
+      body.append(h('div', { class: 'mi-row gm-badges' }, badge(loanStatusLabel(l).toUpperCase(), tone), l.holder.kind !== 'bank' ? badge('SOLD ON', 'info') : null, traceButton(ctx, { kind: 'loan', id: l.id })));
       if (wctx.tab === 'trail') {
         body.append(storyList(ctx, l.trail, { newestFirst: false, max: 60 }));
         return;

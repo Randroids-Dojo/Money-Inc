@@ -259,8 +259,10 @@ if (params.has('ff') && game.eco.genesis) {
   const eco = game.eco;
   const style = (params.get('auto') ?? 'bank') as AutoStyle;
   eco.recordVisuals = false;
+  const until = params.get('until');
   for (let d = 0, n = Number(params.get('ff')); d < n; d++) {
-    autoPlay(eco, style);
+    autoPlay(eco, style, until ?? undefined);
+    if (until && eco.genesis!.open().some((s) => s.kind === until)) break;
     eco.step();
   }
   eco.recordVisuals = true;
