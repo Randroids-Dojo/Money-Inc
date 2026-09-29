@@ -55,6 +55,32 @@
 }
 
 /* ---------------------------------------------------------------- situation windows */
+/* the choice sits at the top of the window, before the reading */
+.gn-decide {
+  margin-bottom: 8px;
+}
+.gn-decide:empty {
+  display: none;
+}
+.gn-decide > .mi-actions {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+  box-shadow: none;
+}
+.gn-decide.is-sticky {
+  position: sticky;
+  top: -8px;
+  z-index: 2;
+  margin: -8px -8px 8px;
+  padding: 8px;
+  background: var(--mi-paper);
+  border-bottom: 1px solid var(--mi-rule);
+  box-shadow: 0 1px 0 var(--mi-paper-hi);
+}
+.gn-decide .gn-err:empty {
+  display: none;
+}
 .gn-cols {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

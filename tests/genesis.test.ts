@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { createEconomy } from '../src/sim/setup';
 import { checkBooks } from '../src/sim/banking';
 import { autoPlay, type AutoStyle } from '../src/sim/genesis/autoplay';
+import { PAUSE_KINDS } from '../src/sim/genesis/types';
+import { Game } from '../src/game/game';
 
 const genesis = (seed: number) => {
   const eco = createEconomy({ seed, banks: 1, scenario: 'genesis' });
@@ -62,6 +64,56 @@ describe('Genesis Mode start', () => {
     expect(next).toBeDefined();
     expect(next!.blocking).toBe(true);
     expect(next!.loan!.requested).toBeLessThan(100_000);
+  });
+});
+
+describe('Genesis Mode pauses', () => {
+  it('stops the clock for every major event: the big firsts, new eras, licences, banks at their limits', () => {
+    const eco = genesis(3);
+    const g = eco.genesis!;
+    const pausedFor = new Set<string>();
+    let milestones = 0;
+    let situations = g.situations.length;
+    g.pauseRequested = false;
+    for (let d = 0; d < 8 * 360; d++) {
+      autoPlay(eco, 'yes');
+      eco.step();
+      const fresh = g.milestones.slice(milestones).filter((m) => m.tier === 3);
+      const major = g.situations.slice(situations).filter((s) => PAUSE_KINDS.includes(s.kind) || s.blocking);
+      if (fresh.length || major.length) expect(g.pauseRequested).toBe(true);
+      for (const s of major) pausedFor.add(s.kind);
+      if (major.length) expect(g.situation(g.pauseFor)).toBeDefined();
+      milestones = g.milestones.length;
+      situations = g.situations.length;
+      g.pauseRequested = false;
+    }
+    expect(pausedFor.has('era')).toBe(true);
+  });
+
+  it('carries on once the player has dealt with what stopped the clock, but not after a pause of their own', () => {
+    const game = new Game(3, 'genesis');
+    game.eco.recordVisuals = false;
+    game.setSpeed(2);
+    game.tick(0.1);
+    // the founding loan stops the clock and holds it
+    expect(game.speed).toBe(0);
+    expect(game.autoPaused).toBe(true);
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(0);
+    const g = game.eco.genesis!;
+    const s = g.open().find((x) => x.blocking)!;
+    g.decideLoan(s.id, { ...s.loan!.suggested, approve: true });
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(2);
+    // the first loan is a big first: the clock stops again for its banner, and dismissing it resumes
+    game.tick(0.1);
+    expect(game.speed).toBe(0);
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(2);
+    // a pause the player made stays a pause
+    game.togglePause();
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(0);
   });
 });
 

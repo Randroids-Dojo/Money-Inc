@@ -59,6 +59,7 @@ import {
 import {
   ERA_INFO,
   newCounters,
+  pausesGame,
   type BusinessPlan,
   type DecisionRecord,
   type Era,
@@ -119,8 +120,10 @@ export class Genesis {
   entryCooldownUntil = 0;
   nextFoundingDay = 0;
   foundingAttempts = 0;
-  /** set when a blocking situation opens; the game shell pauses and clears it */
+  /** set when a major event happens (a decision that needs the player, a big first); the game shell pauses and clears it */
   pauseRequested = false;
+  /** the situation the clock last stopped for (the UI opens it and clears this), or -1 */
+  pauseFor = -1;
   macroNews = false;
   /** businesses are hiring but newcomers have nowhere to live (updated monthly) */
   housingShortage = false;
@@ -167,7 +170,10 @@ export class Genesis {
       const i = this.situations.findIndex((x) => x.status !== 'open');
       if (i >= 0) this.situations.splice(i, 1);
     }
-    if (sit.blocking) this.pauseRequested = true;
+    if (pausesGame(sit)) {
+      this.pauseRequested = true;
+      this.pauseFor = sit.id;
+    }
     return sit;
   }
 
@@ -1523,6 +1529,8 @@ export class Genesis {
     const pop = eco.population();
     const t = (pop > 60 && tier === 3 ? 2 : tier) as 1 | 2 | 3;
     this.milestones.push({ key, day: eco.day, title, text, agent, lot: lot ?? (agent !== undefined ? eco.lotOf(agent) : undefined), tier: t });
+    // the big firsts get a banner: stop the clock so the player can read it
+    if (t === 3) this.pauseRequested = true;
     eco.headline(`${title.charAt(0)}${title.slice(1).toLowerCase()}: ${text}`, 'good', agent, lot, `ms-${key}`, 0);
   }
 

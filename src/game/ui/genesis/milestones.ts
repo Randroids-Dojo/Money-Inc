@@ -1,6 +1,8 @@
 // Milestones: the town's firsts. Early ones get a banner across the top of the screen (the first
 // loan also shows what it did to both balance sheets); later ones a small note; once the town is
-// big, only the news ticker. Nothing here stops the clock.
+// big, only the news ticker. The simulation stops the clock for a banner, so a banner stays up
+// while the game is paused and goes once the player dismisses it (which resumes play) or play
+// resumes.
 
 import { button, glyph, h, iconButton } from '../../../ui';
 import { fmtMoney } from '../../../sim/format';
@@ -21,6 +23,8 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
   let seen = 0;
   const queue: Milestone[] = [];
   let showing: HTMLElement | null = null;
+  /** closes the banner on screen */
+  let dismiss: (() => void) | null = null;
 
   const show = (m: Milestone) => {
     const eco = game.eco;
@@ -34,7 +38,7 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
     const el = h(
       'div',
       { class: 'gn-banner mi-ui' },
-      h('div', { class: 'gn-banner-head' }, h('span', { class: 'gn-banner-star' }, '★'), h('span', { class: 'gn-banner-title' }, m.title), h('span', { class: 'gn-banner-star' }, '★'), iconButton(glyph('close'), 'Dismiss', () => done(), { small: true })),
+      h('div', { class: 'gn-banner-head' }, h('span', { class: 'gn-banner-star' }, '★'), h('span', { class: 'gn-banner-title' }, m.title), h('span', { class: 'gn-banner-star' }, '★'), iconButton(glyph('close'), 'Dismiss', () => dismissed(), { small: true })),
       h('div', { class: 'gn-banner-text' }, m.text),
       extra,
       h(
@@ -48,6 +52,7 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
     let timer = 0;
     const done = () => {
       window.clearTimeout(timer);
+      if (dismiss === done) dismiss = null;
       el.classList.add('is-out');
       window.setTimeout(() => {
         el.remove();
@@ -55,14 +60,20 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
         next();
       }, 250);
     };
+    // closing the banner carries on with the game, once no other first is waiting to be shown
+    const dismissed = () => {
+      done();
+      if (!queue.length) game.resumeAfterEvent();
+    };
     const arm = (ms: number) => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(done, ms);
+      timer = window.setTimeout(() => (game.speed === 0 ? arm(3000) : done()), ms);
     };
     el.addEventListener('pointerenter', () => window.clearTimeout(timer));
     el.addEventListener('pointerleave', () => arm(5000));
     arm(m.key === 'first_loan' ? 20000 : queue.length ? 5000 : 11000);
     showing = el;
+    dismiss = done;
     wrap.append(el);
     // money appears on the map where it happened
     if (agent !== undefined) {
@@ -96,11 +107,16 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
       const g = game.eco.genesis;
       if (!g) return;
       const big = game.eco.population() > 120;
+      let fresh = false;
       while (seen < g.milestones.length) {
         const m = g.milestones[seen++];
-        if (m.tier === 3) queue.push(m);
-        else if (m.tier === 2 && !big) small(m);
+        if (m.tier === 3) {
+          queue.push(m);
+          fresh = true;
+        } else if (m.tier === 2 && !big) small(m);
       }
+      // the clock has stopped for the new first: make way for its banner
+      if (fresh && dismiss) dismiss();
       next();
     },
     reset() {
@@ -108,6 +124,7 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
       queue.length = 0;
       wrap.replaceChildren();
       showing = null;
+      dismiss = null;
     },
   };
 }

@@ -4,7 +4,7 @@
 import './genesis.css';
 import { button, h, iconButton, stat } from '../../../ui';
 import { fmtMoney } from '../../../sim/format';
-import { ERA_INFO, type Situation } from '../../../sim/genesis/types';
+import { ERA_INFO, pausesGame, type Situation } from '../../../sim/genesis/types';
 import type { UIContext } from '../context';
 import type { Hud } from '../hud';
 import { deadlineText, KIND_ICON, openDesk, openSituation, setDecisionListener } from './situations';
@@ -65,7 +65,7 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
     ];
   };
 
-  // ---- non-blocking decisions arrive as a small note, never as a modal
+  // ---- minor decisions arrive as a small note, never as a modal
   const toasts = h('div', { class: 'gn-toasts' });
   document.body.append(toasts);
   const toast = (s: Situation) => {
@@ -98,17 +98,20 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
       if (s.id <= seenSit) continue;
       seenSit = Math.max(seenSit, s.id);
       if (s.status !== 'open') continue;
-      if (!s.blocking) toast(s);
+      // major events open by themselves when the clock stops for them
+      if (!pausesGame(s)) toast(s);
       ctx.renderer.invalidate();
     }
   };
 
-  // ---- a decision that stops the clock opens by itself
+  // ---- a decision or major event that stops the clock opens by itself
   const attend = () => {
     const g = game.eco.genesis;
     if (!g) return;
     scan();
-    const s = g.open().find((x) => x.blocking);
+    const pending = g.pauseFor >= 0 ? g.situation(g.pauseFor) : undefined;
+    g.pauseFor = -1;
+    const s = g.open().find((x) => x.blocking) ?? (pending?.status === 'open' ? pending : undefined);
     if (!s) return;
     if (s.lotId >= 0) ctx.showOnMap({ kind: 'lot', id: s.lotId });
     openSituation(ctx, s.id);
@@ -120,9 +123,10 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
     milestones.scan();
     ledger.update();
     trace.refresh();
-    // another decision may be holding up time
+    // another decision may be holding up time; if not, deciding carries on with the game
     const g = game.eco.genesis;
     if (g && g.open().some((x) => x.blocking)) window.setTimeout(attend, 50);
+    else game.resumeAfterEvent();
   });
 
   const sync = () => {

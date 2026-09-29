@@ -31,7 +31,7 @@ export interface GameListeners {
   month: (() => void)[];
   select: (() => void)[];
   newGame: (() => void)[];
-  /** Genesis Mode: a decision that stops the clock has come up */
+  /** Genesis Mode: a major event (a decision, a big first) has stopped the clock */
   attention: (() => void)[];
 }
 
@@ -40,6 +40,8 @@ export class Game {
   speed: Speed = 1;
   /** speed to restore when un-pausing */
   lastSpeed: Speed = 1;
+  /** Genesis Mode: the clock was stopped by a major event, not by the player */
+  autoPaused = false;
   seed: number;
   scenario: Scenario;
   selection: Selection = null;
@@ -86,6 +88,7 @@ export class Game {
   setSpeed(s: Speed): void {
     if (s !== 0) this.lastSpeed = s;
     this.speed = s;
+    this.autoPaused = false;
   }
 
   togglePause(): void {
@@ -103,12 +106,25 @@ export class Game {
     return !!g && g.situations.some((s) => s.status === 'open' && s.blocking);
   }
 
-  /** Stop the clock for a decision and tell the UI. */
+  /** Stop the clock for a decision or a major event and tell the UI. */
   private holdForDecision(): void {
     const g = this.eco.genesis;
     if (g) g.pauseRequested = false;
-    if (this.speed !== 0) this.setSpeed(0);
+    if (this.speed !== 0) {
+      this.setSpeed(0);
+      this.autoPaused = true;
+    }
     for (const f of this.on.attention) f();
+  }
+
+  /**
+   * Genesis Mode: the player has decided, or dismissed the announcement, that stopped the clock:
+   * carry on at the previous speed. Does nothing if the player paused the game themselves or
+   * another decision is still holding up time.
+   */
+  resumeAfterEvent(): void {
+    if (!this.autoPaused || this.speed !== 0 || this.blocked()) return;
+    this.setSpeed(this.lastSpeed || 1);
   }
 
   /** Advance the clock by `dt` real seconds. Returns the number of days simulated. */
