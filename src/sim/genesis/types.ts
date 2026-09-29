@@ -44,6 +44,14 @@ export interface GenesisRules {
 
 export type SituationKind = 'loan' | 'trouble' | 'constraint' | 'run' | 'failure' | 'charter' | 'era';
 
+/** Major events that stop the clock when they come up, though play can carry on without an answer. */
+export const PAUSE_KINDS: readonly SituationKind[] = ['constraint', 'charter', 'era'];
+
+/** Does this situation stop the clock when it comes up? (Blocking ones also keep it stopped.) */
+export function pausesGame(s: Pick<Situation, 'kind' | 'blocking'>): boolean {
+  return s.blocking || PAUSE_KINDS.includes(s.kind);
+}
+
 export interface PlanFigures {
   /** loan amount these figures assume */
   loan: number;

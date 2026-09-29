@@ -75,6 +75,9 @@ of bank money. The world waits for the first economic event: the first loan.
   moments: missed payments, a bank at its limits, a run, a failing bank, a new bank's licence.
   Nothing says which choice is right. Each option says what it does, and the simulation plays
   it out.
+- **The game pauses itself for every major event:** a bank at its limits, a run, a failing
+  bank, a licence application, a new era and the town's big firsts. The decision opens with its
+  buttons at the top; press play to carry on (or decide first).
 - **The first loan** shows both balance sheets: +$100K loan and +$100K deposit for the bank,
   +$100K deposit and +$100K loan for the business, and money in town going from $0 to $100K.
   After that, the town's firsts (first employee, paycheck, repayment, mortgage, default,

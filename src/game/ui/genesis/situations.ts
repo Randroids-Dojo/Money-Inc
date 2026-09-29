@@ -254,7 +254,7 @@ function loanBody(ctx: UIContext, g: Genesis, s: Situation, body: HTMLElement, r
   // ---- the first loan: what approval does to the books
   if (r.first && open && bank) right.append(section('If you approve', tAccounts(bank.name, b.name, pv.amount, eco.broadMoney())));
 
-  // ---- decide
+  // ---- decide: the buttons sit above everything else (and stay in view while the terms scroll)
   if (open) {
     const err = h('div', { class: 'gn-err' });
     const approve = button(
@@ -274,8 +274,8 @@ function loanBody(ctx: UIContext, g: Genesis, s: Situation, body: HTMLElement, r
       },
       { danger: true },
     );
-    right.append(actions(refuse, approve), err);
-  } else if (s.outcome) right.append(note(s.outcome, 'info'));
+    body.prepend(h('div', { class: 'gn-decide is-sticky' }, actions(refuse, approve), err));
+  } else if (s.outcome) body.prepend(h('div', { class: 'gn-decide' }, note(s.outcome, 'info')));
 
   function finish(): void {
     drafts.delete(s.id);
@@ -317,25 +317,35 @@ function loanSummary(ctx: UIContext, g: Genesis, loanId: number): HTMLElement | 
 }
 
 function actionBody(ctx: UIContext, g: Genesis, s: Situation, body: HTMLElement): void {
+  // the choice comes first; what it is about follows underneath
+  body.append(decisionArea(ctx, g, s));
   body.append(
     h('div', { class: 'mi-row gm-badges' }, badge(KIND_LABEL[s.kind].toUpperCase(), s.kind === 'run' || s.kind === 'failure' ? 'bad' : s.kind === 'era' ? 'info' : 'warn'), s.status === 'open' ? badge(deadlineText(g, s), s.blocking ? 'bad' : 'muted') : badge('DECIDED', 'muted')),
     h('p', { class: 'gm-para' }, s.text),
   );
   const facts = s.bankId !== undefined ? bankSummary(ctx, g, s.bankId) : s.loanId !== undefined ? loanSummary(ctx, g, s.loanId) : null;
   if (facts) body.append(section('Where things stand', facts));
-  if (s.status !== 'open') {
-    if (s.outcome) body.append(note(s.outcome, 'info'));
-    return;
+  const opts = s.options ?? [];
+  if (s.status === 'open' && s.kind !== 'era' && !s.blocking && s.fallback) body.append(note(`If you have not decided by ${fmtDate(s.deadline, true)}: ${opts.find((o) => o.id === s.fallback)?.label.toLowerCase() ?? s.fallback}.`, 'muted'));
+}
+
+/** The buttons for an action situation (or, once it is settled, what came of it). */
+function decisionArea(ctx: UIContext, g: Genesis, s: Situation): HTMLElement {
+  if (s.status !== 'open') return h('div', { class: 'gn-decide' }, s.outcome ? note(s.outcome, 'info') : null);
+  if (s.kind === 'era') {
+    return h(
+      'div',
+      { class: 'gn-decide' },
+      actions(button('Understood', () => {
+        g.decideAction(s.id, 'ok');
+        afterDecision(ctx, s);
+      }, { primary: true })),
+    );
   }
   const opts = s.options ?? [];
-  if (s.kind === 'era') {
-    body.append(actions(button('Understood', () => {
-      g.decideAction(s.id, 'ok');
-      afterDecision(ctx, s);
-    }, { primary: true })));
-    return;
-  }
-  body.append(
+  return h(
+    'div',
+    { class: 'gn-decide' },
     section(
       'Your options',
       h(
@@ -353,7 +363,6 @@ function actionBody(ctx: UIContext, g: Genesis, s: Situation, body: HTMLElement)
           ),
         ),
       ),
-      !s.blocking && s.fallback ? note(`If you have not decided by ${fmtDate(s.deadline, true)}: ${opts.find((o) => o.id === s.fallback)?.label.toLowerCase() ?? s.fallback}.`, 'muted') : null,
     ),
   );
 }

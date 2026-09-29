@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createEconomy } from '../src/sim/setup';
 import { checkBooks } from '../src/sim/banking';
 import { autoPlay, type AutoStyle } from '../src/sim/genesis/autoplay';
+import { PAUSE_KINDS } from '../src/sim/genesis/types';
 
 const genesis = (seed: number) => {
   const eco = createEconomy({ seed, banks: 1, scenario: 'genesis' });
@@ -62,6 +63,30 @@ describe('Genesis Mode start', () => {
     expect(next).toBeDefined();
     expect(next!.blocking).toBe(true);
     expect(next!.loan!.requested).toBeLessThan(100_000);
+  });
+});
+
+describe('Genesis Mode pauses', () => {
+  it('stops the clock for every major event: the big firsts, new eras, licences, banks at their limits', () => {
+    const eco = genesis(3);
+    const g = eco.genesis!;
+    const pausedFor = new Set<string>();
+    let milestones = 0;
+    let situations = g.situations.length;
+    g.pauseRequested = false;
+    for (let d = 0; d < 8 * 360; d++) {
+      autoPlay(eco, 'yes');
+      eco.step();
+      const fresh = g.milestones.slice(milestones).filter((m) => m.tier === 3);
+      const major = g.situations.slice(situations).filter((s) => PAUSE_KINDS.includes(s.kind) || s.blocking);
+      if (fresh.length || major.length) expect(g.pauseRequested).toBe(true);
+      for (const s of major) pausedFor.add(s.kind);
+      if (major.length) expect(g.situation(g.pauseFor)).toBeDefined();
+      milestones = g.milestones.length;
+      situations = g.situations.length;
+      g.pauseRequested = false;
+    }
+    expect(pausedFor.has('era')).toBe(true);
   });
 });
 

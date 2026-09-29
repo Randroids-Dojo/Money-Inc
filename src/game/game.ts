@@ -31,7 +31,7 @@ export interface GameListeners {
   month: (() => void)[];
   select: (() => void)[];
   newGame: (() => void)[];
-  /** Genesis Mode: a decision that stops the clock has come up */
+  /** Genesis Mode: a major event (a decision, a big first) has stopped the clock */
   attention: (() => void)[];
 }
 
@@ -103,7 +103,7 @@ export class Game {
     return !!g && g.situations.some((s) => s.status === 'open' && s.blocking);
   }
 
-  /** Stop the clock for a decision and tell the UI. */
+  /** Stop the clock for a decision or a major event and tell the UI. */
   private holdForDecision(): void {
     const g = this.eco.genesis;
     if (g) g.pauseRequested = false;
