@@ -1,7 +1,8 @@
 // Milestones: the town's firsts. Early ones get a banner across the top of the screen (the first
 // loan also shows what it did to both balance sheets); later ones a small note; once the town is
 // big, only the news ticker. The simulation stops the clock for a banner, so a banner stays up
-// while the game is paused and goes once the player dismisses it or play resumes.
+// while the game is paused and goes once the player dismisses it (which resumes play) or play
+// resumes.
 
 import { button, glyph, h, iconButton } from '../../../ui';
 import { fmtMoney } from '../../../sim/format';
@@ -37,7 +38,7 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
     const el = h(
       'div',
       { class: 'gn-banner mi-ui' },
-      h('div', { class: 'gn-banner-head' }, h('span', { class: 'gn-banner-star' }, '★'), h('span', { class: 'gn-banner-title' }, m.title), h('span', { class: 'gn-banner-star' }, '★'), iconButton(glyph('close'), 'Dismiss', () => done(), { small: true })),
+      h('div', { class: 'gn-banner-head' }, h('span', { class: 'gn-banner-star' }, '★'), h('span', { class: 'gn-banner-title' }, m.title), h('span', { class: 'gn-banner-star' }, '★'), iconButton(glyph('close'), 'Dismiss', () => dismissed(), { small: true })),
       h('div', { class: 'gn-banner-text' }, m.text),
       extra,
       h(
@@ -58,6 +59,11 @@ export function installMilestones(ctx: UIContext, trace: (agent: number) => void
         showing = null;
         next();
       }, 250);
+    };
+    // closing the banner carries on with the game, once no other first is waiting to be shown
+    const dismissed = () => {
+      done();
+      if (!queue.length) game.resumeAfterEvent();
     };
     const arm = (ms: number) => {
       window.clearTimeout(timer);

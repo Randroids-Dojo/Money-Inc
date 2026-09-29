@@ -123,9 +123,10 @@ export function installGenesisUi(ctx: UIContext, hud: Hud): GenesisUi {
     milestones.scan();
     ledger.update();
     trace.refresh();
-    // another decision may be holding up time
+    // another decision may be holding up time; if not, deciding carries on with the game
     const g = game.eco.genesis;
     if (g && g.open().some((x) => x.blocking)) window.setTimeout(attend, 50);
+    else game.resumeAfterEvent();
   });
 
   const sync = () => {

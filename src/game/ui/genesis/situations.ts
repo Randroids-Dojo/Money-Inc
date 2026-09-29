@@ -407,6 +407,8 @@ export function openSituation(ctx: UIContext, id: number, anchor?: { x: number; 
     },
     // decisions are made while the player reads: only re-render on their own changes
     update: () => {},
+    // a new era is only an announcement: closing it carries on with the game
+    onClose: s0.kind === 'era' ? () => ctx.game.resumeAfterEvent() : undefined,
   });
   win.focus();
 }

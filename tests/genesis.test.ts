@@ -5,6 +5,7 @@ import { createEconomy } from '../src/sim/setup';
 import { checkBooks } from '../src/sim/banking';
 import { autoPlay, type AutoStyle } from '../src/sim/genesis/autoplay';
 import { PAUSE_KINDS } from '../src/sim/genesis/types';
+import { Game } from '../src/game/game';
 
 const genesis = (seed: number) => {
   const eco = createEconomy({ seed, banks: 1, scenario: 'genesis' });
@@ -87,6 +88,32 @@ describe('Genesis Mode pauses', () => {
       g.pauseRequested = false;
     }
     expect(pausedFor.has('era')).toBe(true);
+  });
+
+  it('carries on once the player has dealt with what stopped the clock, but not after a pause of their own', () => {
+    const game = new Game(3, 'genesis');
+    game.eco.recordVisuals = false;
+    game.setSpeed(2);
+    game.tick(0.1);
+    // the founding loan stops the clock and holds it
+    expect(game.speed).toBe(0);
+    expect(game.autoPaused).toBe(true);
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(0);
+    const g = game.eco.genesis!;
+    const s = g.open().find((x) => x.blocking)!;
+    g.decideLoan(s.id, { ...s.loan!.suggested, approve: true });
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(2);
+    // the first loan is a big first: the clock stops again for its banner, and dismissing it resumes
+    game.tick(0.1);
+    expect(game.speed).toBe(0);
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(2);
+    // a pause the player made stays a pause
+    game.togglePause();
+    game.resumeAfterEvent();
+    expect(game.speed).toBe(0);
   });
 });
 

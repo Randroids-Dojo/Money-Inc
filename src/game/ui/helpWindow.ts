@@ -211,7 +211,7 @@ const PAGES: Record<TabId, (ctx: UIContext, w: WindowCtx) => Child[]> = {
       ),
       section(
         'Your desk (K)',
-        h('p', { class: 'gm-para' }, 'Decisions wait on your desk. The game pauses itself for every major event — a bank at its limits, a run, a failing bank, a licence application, a new era, the town’s big firsts — and some (the first loans, a run, a failing bank) keep the clock stopped until you decide. The rest have a deadline: leave them and the bank decides as it would have on its own.'),
+        h('p', { class: 'gm-para' }, 'Decisions wait on your desk. The game pauses itself for every major event — a bank at its limits, a run, a failing bank, a licence application, a new era, the town’s big firsts — and some (the first loans, a run, a failing bank) keep the clock stopped until you decide. Deciding, or closing the announcement, sets the clock going again. The rest have a deadline: leave them and the bank decides as it would have on its own.'),
       ),
       section(
         'Following the money (T and J)',
